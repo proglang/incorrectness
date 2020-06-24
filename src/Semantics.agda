@@ -3,7 +3,9 @@ module Semantics where
 open import Data.Nat
 open import Data.Product
 open import Data.String
-open import Relation.Binary.PropositionalEquality
+import Relation.Binary.PropositionalEquality as Eq
+open Eq using (_≡_;_≢_; refl)
+open Eq.≡-Reasoning
 open import Level renaming (zero to lzero; suc to lsuc)
 
 Id = String
@@ -16,10 +18,13 @@ data Expr : Set where
   Var : Id → Expr
   Lam : Id → Expr → Expr
   App : Expr → Expr → Expr
+  Pair : Expr → Expr → Expr
+  Fst Snd : Expr → Expr
 
 data Type : Set where
   Base : ℕ → Type
   _⇒_ : Type → Type → Type
+  _⋆_ : Type → Type → Type
 
 data Type' : Set where
   Base : ℕ → Type'
@@ -43,8 +48,6 @@ variable
   S T : Type
   Γ : Env Type
   M N : Expr
-  S' T' : Type'
-  Γ' : Env Type'
 
 data _⊢_⦂_ : Env Type → Expr → Type → Set where
 
@@ -64,25 +67,60 @@ data _⊢_⦂_ : Env Type → Expr → Type → Set where
     --------------------
     Γ ⊢ App M N ⦂ T
 
-data _⊢_÷_ : Env Type' → Expr → Type' → Set where
+  pair :
+    Γ ⊢ M ⦂ S →
+    Γ ⊢ N ⦂ T →
+    --------------------
+    Γ ⊢ Pair M N ⦂ (S ⋆ T)
+
+  pair-E1 :
+    Γ ⊢ M ⦂ (S ⋆ T) →
+    --------------------
+    Γ ⊢ Fst M ⦂ S
+
+  pair-E2 :
+    Γ ⊢ M ⦂ (S ⋆ T) →
+    --------------------
+    Γ ⊢ Snd M ⦂ T
+
+data _⊢_÷_ : Env Type → Expr → Type → Set where
 
   var :
-    x ⦂ T' ∈ Γ' →
+    x ⦂ T ∈ Γ →
     --------------------
-    Γ' ⊢ Var x ÷ T'
+    Γ ⊢ Var x ÷ T
+
+  lam :
+    (· , x ⦂ S) ⊢ M ÷ T →
+    --------------------
+    · ⊢ Lam x M ÷ (S ⇒ T)
+
+  pair-E1 :
+    Γ ⊢ M ÷ (S ⋆ T) →
+    --------------------
+    Γ ⊢ Fst M ÷ S
+
+  pair-E2 :
+    Γ ⊢ M ÷ (S ⋆ T) →
+    --------------------
+    Γ ⊢ Snd M ÷ T
 
 record _←_ (A B : Set) : Set where
   field
     func : A → B
     back : ∀ (b : B) → ∃ λ (a : A) → func a ≡ b
 
+open _←_
+
 T⟦_⟧ : Type → Set
 T⟦ Base x ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
+T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 
-T'⟦_⟧ : Type' → Set
+T'⟦_⟧ : Type → Set
 T'⟦ Base x ⟧ = ℕ
-T'⟦ S' ⇐ T' ⟧ = T'⟦ S' ⟧ ← T'⟦ T' ⟧
+T'⟦ S ⇒ T ⟧ = T'⟦ S ⟧ ← T'⟦ T ⟧
+T'⟦ S ⋆ T ⟧ = T'⟦ S ⟧ × T'⟦ T ⟧
   
 E⟦_⟧ : Env Type → Env Set
 E⟦ · ⟧ = ·
@@ -100,27 +138,21 @@ eval : Γ ⊢ M ⦂ T → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
 eval (var x∈) γ = lookup x∈ γ
 eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
 eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
+eval (pair ⊢M ⊢N) γ = (eval ⊢M γ) , (eval ⊢N γ)
+eval (pair-E1 ⊢M) γ = proj₁ (eval ⊢M γ)
+eval (pair-E2 ⊢M) γ = proj₂ (eval ⊢M γ)
 
-T-corr : Type' → Type
-T-corr (Base x) = Base x
-T-corr (S' ⇐ T') = T-corr S' ⇒ T-corr T'
-
-TE-corr : Env Type' → Env Type
-TE-corr · = ·
-TE-corr (Γ' , x ⦂ T') = (TE-corr Γ') , x ⦂ T-corr T'
-
-∈-corr : (x∈  : x ⦂ T' ∈ Γ') → x ⦂ T-corr T' ∈ TE-corr Γ'
-∈-corr found = found
-∈-corr (there x∈ x) = there (∈-corr x∈) x
-
-corr : Γ' ⊢ M ÷ T' → TE-corr Γ' ⊢ M ⦂ T-corr T'
-corr (var x) = var (∈-corr x)
-
+corr : Γ ⊢ M ÷ T → Γ ⊢ M ⦂ T
+corr (var x) = var x
+corr (lam ⊢M) = lam (corr ⊢M)
+corr (pair-E1 ÷M) = pair-E1 (corr ÷M)
+corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
 
 -- pick one element of a type to demonstrate non-emptiness
 one : T⟦ T ⟧
 one {Base x} = 0
 one {S ⇒ T} = λ x → one
+one {S ⋆ T} = one , one
 
 many : iEnv E⟦ Γ ⟧
 many {·} = ·
@@ -134,8 +166,23 @@ lookup-gen : (x∈ : x ⦂ T ∈ Γ) (t  : T⟦ T ⟧) → lookup x∈ (gen x∈
 lookup-gen found t = refl
 lookup-gen (there x∈ x) t = lookup-gen x∈ t
 
+open Eq.≡-Reasoning
+
+postulate
+  ext : ∀ {A B : Set}{f g : A → B} → (∀ x → f x ≡ g x) → f ≡ g
+
 -- soundness of the incorrectness rules
 lave :
-  (÷M : Γ' ⊢ M ÷ T') →
-  ∀ (t : T⟦ T-corr T' ⟧) → ∃ λ (γ : iEnv E⟦ TE-corr Γ' ⟧) → eval (corr ÷M) γ ≡ t
-lave (var x∈) = λ t → (gen (∈-corr x∈) t) , (lookup-gen (∈-corr x∈) t)
+  (÷M : Γ ⊢ M ÷ T) →
+  ∀ (t : T⟦ T ⟧) →
+  ∃ λ (γ : iEnv E⟦ Γ ⟧) →
+  eval (corr ÷M) γ ≡ t
+lave (var x∈) t =  (gen x∈ t) , lookup-gen x∈ t
+lave (lam{x = x}{S = S} ÷M) t = · , ext aux
+  where
+    aux : (s : T⟦ S ⟧) → eval (corr ÷M) (· , x ⦂ s) ≡ t s
+    aux s with lave ÷M (t s)
+    ... | (· , .x ⦂ a) , snd = {!!} -- cannot complete!
+lave (pair-E1 ÷M) t with lave ÷M (t , one)
+... | γ , ih rewrite Eq.sym ih = γ , {!ih!}
+lave (pair-E2 ÷M) t = {!!}
