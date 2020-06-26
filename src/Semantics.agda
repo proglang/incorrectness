@@ -2,6 +2,7 @@ module Semantics where
 
 open import Data.Nat
 open import Data.Product
+open import Data.Sum
 open import Data.String using (String)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_;_≢_; refl)
@@ -20,28 +21,29 @@ data Expr : Set where
   App : Expr → Expr → Expr
   Pair : Expr → Expr → Expr
   Fst Snd : Expr → Expr
+  Inl Inr : Expr → Expr
+  Case : Expr → Id → Expr → Id → Expr → Expr
 
 data Type : Set where
   Base : ℕ → Type
   _⇒_ : Type → Type → Type
   _⋆_ : Type → Type → Type
-
-data Type' : Set where
-  Base : ℕ → Type'
-  _⇐_ : Type' → Type' → Type'
+  _⊹_ : Type → Type → Type
 
 data Env (A : Set ℓ) : Set ℓ where
   · : Env A
   _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
 
+{-
 _++_ : {A : Set ℓ} → Env A → Env A → Env A
 γ ++ · = γ
 γ ++ (δ , x ⦂ v) = (γ ++ δ) , x ⦂ v
+-}
 
 variable
-  S T : Type
+  S T U : Type
   Γ Γ₁ Γ₂ : Env Type
-  M N : Expr
+  L M N : Expr
 
 data Split {A : Set ℓ} : Env A → Env A → Env A → Set ℓ where
   nil : Split · · ·
@@ -92,6 +94,23 @@ data _⊢_⦂_ : Env Type → Expr → Type → Set where
     --------------------
     Γ ⊢ Snd M ⦂ T
 
+  sum-I1 :
+    Γ ⊢ M ⦂ S →
+    --------------------
+    Γ ⊢ Inl M ⦂ (S ⊹ T)
+
+  sum-I2 :
+    Γ ⊢ N ⦂ T →
+    --------------------
+    Γ ⊢ Inl N ⦂ (S ⊹ T)
+  
+  sum-E :
+    Γ ⊢ L ⦂ (S ⊹ T) →
+    (Γ , x ⦂ S) ⊢ M ⦂ U →
+    (Γ , y ⦂ T) ⊢ N ⦂ U →
+    --------------------
+    Γ ⊢ Case L x M y N ⦂ U
+
 split-sym : Split Γ Γ₁ Γ₂ → Split Γ Γ₂ Γ₁
 split-sym nil = nil
 split-sym (lft sp) = rgt (split-sym sp)
@@ -110,6 +129,9 @@ weaken sp (app ⊢M ⊢N) = app (weaken sp ⊢M) (weaken sp ⊢N)
 weaken sp (pair ⊢M ⊢N) = pair (weaken sp ⊢M) (weaken sp ⊢N)
 weaken sp (pair-E1 ⊢M) = pair-E1 (weaken sp ⊢M)
 weaken sp (pair-E2 ⊢M) = pair-E2 (weaken sp ⊢M)
+weaken sp (sum-I1 ⊢M) = sum-I1 (weaken sp ⊢M)
+weaken sp (sum-I2 ⊢N) = sum-I2 (weaken sp ⊢N)
+weaken sp (sum-E ⊢L ⊢M ⊢N) = sum-E (weaken sp ⊢L) (weaken (lft sp) ⊢M) (weaken (lft sp) ⊢N)
 
 data _⊢_÷_ : Env Type → Expr → Type → Set where
 
@@ -151,11 +173,14 @@ T⟦_⟧ : Type → Set
 T⟦ Base x ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
 T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
+T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
 
 T'⟦_⟧ : Type → Set
 T'⟦ Base x ⟧ = ℕ
 T'⟦ S ⇒ T ⟧ = T'⟦ S ⟧ ← T'⟦ T ⟧
 T'⟦ S ⋆ T ⟧ = T'⟦ S ⟧ × T'⟦ T ⟧
+T'⟦ S ⊹ T ⟧ = T'⟦ S ⟧ ⊎ T'⟦ T ⟧
+
   
 E⟦_⟧ : Env Type → Env Set
 E⟦ · ⟧ = ·
@@ -176,6 +201,11 @@ eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
 eval (pair ⊢M ⊢N) γ = (eval ⊢M γ) , (eval ⊢N γ)
 eval (pair-E1 ⊢M) γ = proj₁ (eval ⊢M γ)
 eval (pair-E2 ⊢M) γ = proj₂ (eval ⊢M γ)
+eval (sum-I1 ⊢M) γ = inj₁ (eval ⊢M γ)
+eval (sum-I2 ⊢N) γ = inj₂ (eval ⊢N γ)
+eval (sum-E{S = S}{T = T}{U = U} ⊢L ⊢M ⊢N) γ =
+  [ (λ s → eval ⊢M (γ , _ ⦂ s)) , (λ t → eval ⊢N (γ , _ ⦂ t)) ] (eval ⊢L γ)
+
 
 corr : Γ ⊢ M ÷ T → Γ ⊢ M ⦂ T
 corr (var x) = var x
@@ -189,6 +219,7 @@ one : T⟦ T ⟧
 one {Base x} = 0
 one {S ⇒ T} = λ x → one
 one {S ⋆ T} = one , one
+one {S ⊹ T} = inj₁ one
 
 many : iEnv E⟦ Γ ⟧
 many {·} = ·
@@ -212,7 +243,13 @@ unsplit-env nil γ₁ γ₂ = ·
 unsplit-env (lft sp) (γ₁ , _ ⦂ a) γ₂ = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
 unsplit-env (rgt sp) γ₁ (γ₂ , _ ⦂ a) = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
 
-lookup-unsplit :  (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
+unsplit-split : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
+  unsplit-env sp γ₁ γ₂ ≡ unsplit-env (split-sym sp) γ₂ γ₁
+unsplit-split nil γ₁ γ₂ = refl
+unsplit-split (lft sp) (γ₁ , _ ⦂ a) γ₂ rewrite unsplit-split sp γ₁ γ₂ = refl
+unsplit-split (rgt sp) γ₁ (γ₂ , _ ⦂ a) rewrite unsplit-split sp γ₁ γ₂ = refl
+
+lookup-unsplit : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
   (x∈ : x ⦂ T ∈ Γ₁) →
   lookup (weaken-∈ sp x∈) (unsplit-env sp γ₁ γ₂) ≡ lookup x∈ γ₁
 lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ found = refl
@@ -233,6 +270,15 @@ eval-unsplit sp γ₁ γ₂ (pair-E1 ⊢M)
   rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
 eval-unsplit sp γ₁ γ₂ (pair-E2 ⊢M)
   rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
+eval-unsplit sp γ₁ γ₂ (sum-I1 ⊢M) 
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
+eval-unsplit sp γ₁ γ₂ (sum-I2 ⊢N)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢N = refl
+eval-unsplit sp γ₁ γ₂ (sum-E ⊢L ⊢M ⊢N) 
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢L
+        | ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
+        | ext (λ t → eval-unsplit (lft sp) (γ₁ , _ ⦂ t) γ₂ ⊢N)
+  = refl
 
 -- soundness of the incorrectness rules
 lave :
@@ -252,5 +298,12 @@ lave (pair-E1 ÷M) t with lave ÷M (t , one)
 lave (pair-E2 ÷M) t with lave ÷M (one , t)
 ... | γ , ih = γ , Eq.cong proj₂ ih
 
-lave (pair sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
-... | γ₁ , ih-M | γ₂ , ih-N = unsplit-env sp γ₁ γ₂ , {!!}
+lave {Γ = Γ} (pair{Γ₁ = Γ₁}{Γ₂ = Γ₂} sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
+... | γ₁ , ih-M | γ₂ , ih-N =
+  unsplit-env sp γ₁ γ₂ ,
+  Eq.cong₂ _,_ (Eq.trans (eval-unsplit sp γ₁ γ₂ (corr ÷M)) ih-M)
+               (begin eval (weaken (split-sym sp) (corr ÷N)) (unsplit-env sp γ₁ γ₂) 
+               ≡⟨ Eq.cong (eval (weaken (split-sym sp) (corr ÷N))) (unsplit-split sp γ₁ γ₂) ⟩
+               eval (weaken (split-sym sp) (corr ÷N)) (unsplit-env (split-sym sp) γ₂ γ₁)
+               ≡⟨ eval-unsplit (split-sym sp) γ₂ γ₁ (corr ÷N) ⟩
+               ih-N)
