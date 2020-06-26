@@ -2,7 +2,7 @@ module Semantics where
 
 open import Data.Nat
 open import Data.Product
-open import Data.String
+open import Data.String using (String)
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_;_≢_; refl)
 open Eq.≡-Reasoning
@@ -32,7 +32,21 @@ data Type' : Set where
 
 data Env (A : Set ℓ) : Set ℓ where
   · : Env A
-  _,_⦂_ : Env A → Id → A → Env A
+  _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
+
+_++_ : {A : Set ℓ} → Env A → Env A → Env A
+γ ++ · = γ
+γ ++ (δ , x ⦂ v) = (γ ++ δ) , x ⦂ v
+
+variable
+  S T : Type
+  Γ Γ₁ Γ₂ : Env Type
+  M N : Expr
+
+data Split {A : Set ℓ} : Env A → Env A → Env A → Set ℓ where
+  nil : Split · · ·
+  lft : ∀ {a : A}{Γ Γ₁ Γ₂ : Env A} → Split Γ Γ₁ Γ₂ → Split (Γ , x ⦂ a) (Γ₁ , x ⦂ a) Γ₂
+  rgt : ∀ {a : A}{Γ Γ₁ Γ₂ : Env A} → Split Γ Γ₁ Γ₂ → Split (Γ , x ⦂ a) Γ₁ (Γ₂ , x ⦂ a)
 
 data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
 
@@ -41,13 +55,8 @@ data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
 
   there : ∀ {a a' : A}{E : Env A} →
     x ⦂ a ∈ E →
-    x ≢ y →
+      -- x ≢ y →
     x ⦂ a ∈ (E , y ⦂ a')
-
-variable
-  S T : Type
-  Γ : Env Type
-  M N : Expr
 
 data _⊢_⦂_ : Env Type → Expr → Type → Set where
 
@@ -83,6 +92,25 @@ data _⊢_⦂_ : Env Type → Expr → Type → Set where
     --------------------
     Γ ⊢ Snd M ⦂ T
 
+split-sym : Split Γ Γ₁ Γ₂ → Split Γ Γ₂ Γ₁
+split-sym nil = nil
+split-sym (lft sp) = rgt (split-sym sp)
+split-sym (rgt sp) = lft (split-sym sp)
+
+weaken-∈ : Split Γ Γ₁ Γ₂ → x ⦂ T ∈ Γ₁ → x ⦂ T ∈ Γ
+weaken-∈ (lft sp) found = found
+weaken-∈ (rgt sp) found = there (weaken-∈ sp found)
+weaken-∈ (lft sp) (there x∈) = there (weaken-∈ sp x∈)
+weaken-∈ (rgt sp) (there x∈) = there (weaken-∈ sp (there x∈))
+
+weaken : Split Γ Γ₁ Γ₂ → Γ₁ ⊢ M ⦂ T → Γ ⊢ M ⦂ T
+weaken sp (var x∈) = var (weaken-∈ sp x∈)
+weaken sp (lam ⊢M) = lam (weaken (lft sp) ⊢M)
+weaken sp (app ⊢M ⊢N) = app (weaken sp ⊢M) (weaken sp ⊢N)
+weaken sp (pair ⊢M ⊢N) = pair (weaken sp ⊢M) (weaken sp ⊢N)
+weaken sp (pair-E1 ⊢M) = pair-E1 (weaken sp ⊢M)
+weaken sp (pair-E2 ⊢M) = pair-E2 (weaken sp ⊢M)
+
 data _⊢_÷_ : Env Type → Expr → Type → Set where
 
   var :
@@ -94,6 +122,13 @@ data _⊢_÷_ : Env Type → Expr → Type → Set where
     (· , x ⦂ S) ⊢ M ÷ T →
     --------------------
     · ⊢ Lam x M ÷ (S ⇒ T)
+
+  pair :
+    Split Γ Γ₁ Γ₂ →
+    Γ₁ ⊢ M ÷ S →
+    Γ₂ ⊢ N ÷ T →
+    --------------------
+    Γ ⊢ Pair M N ÷ (S ⋆ T)
 
   pair-E1 :
     Γ ⊢ M ÷ (S ⋆ T) →
@@ -132,7 +167,7 @@ data iEnv : Env Set → Set where
 
 lookup : (x ⦂ T ∈ Γ) → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
 lookup found (γ , _ ⦂ a) = a
-lookup (there x∈ x) (γ , _ ⦂ a) = lookup x∈ γ
+lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
 
 eval : Γ ⊢ M ⦂ T → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
 eval (var x∈) γ = lookup x∈ γ
@@ -147,6 +182,7 @@ corr (var x) = var x
 corr (lam ⊢M) = lam (corr ⊢M)
 corr (pair-E1 ÷M) = pair-E1 (corr ÷M)
 corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
+corr (pair sp ÷M ÷N) = pair (weaken sp (corr ÷M)) (weaken (split-sym sp) (corr ÷N))
 
 -- pick one element of a type to demonstrate non-emptiness
 one : T⟦ T ⟧
@@ -160,16 +196,43 @@ many {Γ , x ⦂ T} = many , x ⦂ one
 
 gen : (x∈ : x ⦂ T ∈ Γ) (t  : T⟦ T ⟧) → iEnv E⟦ Γ ⟧
 gen found t = many , _ ⦂ t
-gen (there x∈ x) t = (gen x∈ t) , _ ⦂ one
+gen (there x∈) t = (gen x∈ t) , _ ⦂ one
 
 lookup-gen : (x∈ : x ⦂ T ∈ Γ) (t  : T⟦ T ⟧) → lookup x∈ (gen x∈ t) ≡ t
 lookup-gen found t = refl
-lookup-gen (there x∈ x) t = lookup-gen x∈ t
+lookup-gen (there x∈) t = lookup-gen x∈ t
 
 open Eq.≡-Reasoning
 
 postulate
   ext : ∀ {A B : Set}{f g : A → B} → (∀ x → f x ≡ g x) → f ≡ g
+
+unsplit-env : Split Γ Γ₁ Γ₂ → iEnv E⟦ Γ₁ ⟧ → iEnv E⟦ Γ₂ ⟧ → iEnv E⟦ Γ ⟧
+unsplit-env nil γ₁ γ₂ = ·
+unsplit-env (lft sp) (γ₁ , _ ⦂ a) γ₂ = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
+unsplit-env (rgt sp) γ₁ (γ₂ , _ ⦂ a) = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
+
+lookup-unsplit :  (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
+  (x∈ : x ⦂ T ∈ Γ₁) →
+  lookup (weaken-∈ sp x∈) (unsplit-env sp γ₁ γ₂) ≡ lookup x∈ γ₁
+lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ found = refl
+lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) found = lookup-unsplit sp γ₁ γ₂ found
+lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ (there x∈) = lookup-unsplit sp γ₁ γ₂ x∈
+lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) (there x∈) = lookup-unsplit sp γ₁ γ₂ (there x∈)
+
+eval-unsplit : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
+  (⊢M : Γ₁ ⊢ M ⦂ T) →
+  eval (weaken sp ⊢M) (unsplit-env sp γ₁ γ₂) ≡ eval ⊢M γ₁
+eval-unsplit sp γ₁ γ₂ (var x∈) = lookup-unsplit sp γ₁ γ₂ x∈
+eval-unsplit sp γ₁ γ₂ (lam ⊢M) = ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
+eval-unsplit sp γ₁ γ₂ (app ⊢M ⊢M₁) 
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
+eval-unsplit sp γ₁ γ₂ (pair ⊢M ⊢M₁)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
+eval-unsplit sp γ₁ γ₂ (pair-E1 ⊢M)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
+eval-unsplit sp γ₁ γ₂ (pair-E2 ⊢M)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
 
 -- soundness of the incorrectness rules
 lave :
@@ -182,7 +245,12 @@ lave (lam{x = x}{S = S} ÷M) t = · , ext aux
   where
     aux : (s : T⟦ S ⟧) → eval (corr ÷M) (· , x ⦂ s) ≡ t s
     aux s with lave ÷M (t s)
-    ... | (· , .x ⦂ a) , snd = {!!} -- cannot complete!
+    ... | (· , .x ⦂ a) , snd = {!!} -- impossible to complete!
+
 lave (pair-E1 ÷M) t with lave ÷M (t , one)
-... | γ , ih rewrite Eq.sym ih = γ , {!ih!}
-lave (pair-E2 ÷M) t = {!!}
+... | γ , ih = γ , Eq.cong proj₁ ih
+lave (pair-E2 ÷M) t with lave ÷M (one , t)
+... | γ , ih = γ , Eq.cong proj₂ ih
+
+lave (pair sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
+... | γ₁ , ih-M | γ₂ , ih-N = unsplit-env sp γ₁ γ₂ , {!!}
