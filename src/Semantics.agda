@@ -133,6 +133,8 @@ weaken sp (sum-I1 ⊢M) = sum-I1 (weaken sp ⊢M)
 weaken sp (sum-I2 ⊢N) = sum-I2 (weaken sp ⊢N)
 weaken sp (sum-E ⊢L ⊢M ⊢N) = sum-E (weaken sp ⊢L) (weaken (lft sp) ⊢M) (weaken (lft sp) ⊢N)
 
+-- incorrectness typing
+
 data _⊢_÷_ : Env Type → Expr → Type → Set where
 
   var :
@@ -161,6 +163,14 @@ data _⊢_÷_ : Env Type → Expr → Type → Set where
     Γ ⊢ M ÷ (S ⋆ T) →
     --------------------
     Γ ⊢ Snd M ÷ T
+
+  sum-E :
+    Split Γ Γ₁ Γ₂ →
+    Γ₁ ⊢ L ÷ (S ⊹ T) →
+    (Γ₂ , x ⦂ S) ⊢ M ÷ U →
+    (Γ₂ , y ⦂ T) ⊢ N ÷ U →
+    --------------------
+    Γ ⊢ Case L x M y N ÷ U
 
 record _←_ (A B : Set) : Set where
   field
@@ -213,6 +223,7 @@ corr (lam ⊢M) = lam (corr ⊢M)
 corr (pair-E1 ÷M) = pair-E1 (corr ÷M)
 corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
 corr (pair sp ÷M ÷N) = pair (weaken sp (corr ÷M)) (weaken (split-sym sp) (corr ÷N))
+corr (sum-E sp ÷L ÷M ÷N) = sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr ÷M)) (weaken (lft (split-sym sp)) (corr ÷N))
 
 -- pick one element of a type to demonstrate non-emptiness
 one : T⟦ T ⟧
@@ -298,7 +309,7 @@ lave (pair-E1 ÷M) t with lave ÷M (t , one)
 lave (pair-E2 ÷M) t with lave ÷M (one , t)
 ... | γ , ih = γ , Eq.cong proj₂ ih
 
-lave {Γ = Γ} (pair{Γ₁ = Γ₁}{Γ₂ = Γ₂} sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
+lave (pair sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
 ... | γ₁ , ih-M | γ₂ , ih-N =
   unsplit-env sp γ₁ γ₂ ,
   Eq.cong₂ _,_ (Eq.trans (eval-unsplit sp γ₁ γ₂ (corr ÷M)) ih-M)
@@ -307,3 +318,11 @@ lave {Γ = Γ} (pair{Γ₁ = Γ₁}{Γ₂ = Γ₂} sp ÷M ÷N) (s , t) with lave
                eval (weaken (split-sym sp) (corr ÷N)) (unsplit-env (split-sym sp) γ₂ γ₁)
                ≡⟨ eval-unsplit (split-sym sp) γ₂ γ₁ (corr ÷N) ⟩
                ih-N)
+
+lave (sum-E{S = S}{T = T}{U = U} sp ÷L ÷M ÷N) u
+  with lave ÷M u | lave ÷N u
+... | (γ₁ , _ ⦂ s) , ih-M | (γ₂ , _ ⦂ t) , ih-N
+  with lave ÷L (inj₁ s)
+... | γ₀ , ih-L =
+  unsplit-env sp γ₀ γ₁ ,
+  {!!}
