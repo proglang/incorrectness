@@ -319,10 +319,62 @@ lave (pair sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
                ≡⟨ eval-unsplit (split-sym sp) γ₂ γ₁ (corr ÷N) ⟩
                ih-N)
 
+-- works, but unsatisfactory!
+-- this proof uses only one branch of the case
+-- this choice is possible because both branches ÷M and ÷N have the same type
+-- in general, U could be the union of the types of ÷M and ÷N
 lave (sum-E{S = S}{T = T}{U = U} sp ÷L ÷M ÷N) u
   with lave ÷M u | lave ÷N u
-... | (γ₁ , _ ⦂ s) , ih-M | (γ₂ , _ ⦂ t) , ih-N
+... | (γ₁ , x ⦂ s) , ih-M | (γ₂ , y ⦂ t) , ih-N
   with lave ÷L (inj₁ s)
-... | γ₀ , ih-L =
+... | γ₀ , ih-L
+  =
   unsplit-env sp γ₀ γ₁ ,
-  {!!}
+  (begin [
+      (λ s₁ →
+         eval (weaken (lft (split-sym sp)) (corr ÷M))
+         (unsplit-env sp γ₀ γ₁ , x ⦂ s₁))
+      ,
+      (λ t₁ →
+         eval (weaken (lft (split-sym sp)) (corr ÷N))
+         (unsplit-env sp γ₀ γ₁ , y ⦂ t₁))
+      ]
+      (eval (weaken sp (corr ÷L)) (unsplit-env sp γ₀ γ₁))
+  ≡⟨ Eq.cong [
+      (λ s₁ →
+         eval (weaken (lft (split-sym sp)) (corr ÷M))
+         (unsplit-env sp γ₀ γ₁ , x ⦂ s₁))
+      ,
+      (λ t₁ →
+         eval (weaken (lft (split-sym sp)) (corr ÷N))
+         (unsplit-env sp γ₀ γ₁ , y ⦂ t₁))
+      ] (eval-unsplit sp γ₀ γ₁ (corr ÷L)) ⟩ 
+    [
+      (λ s₁ →
+         eval (weaken (lft (split-sym sp)) (corr ÷M))
+         (unsplit-env sp γ₀ γ₁ , x ⦂ s₁))
+      ,
+      (λ t₁ →
+         eval (weaken (lft (split-sym sp)) (corr ÷N))
+         (unsplit-env sp γ₀ γ₁ , y ⦂ t₁))
+      ]
+      (eval (corr ÷L) γ₀) 
+  ≡⟨ Eq.cong
+       [
+       (λ s₁ →
+          eval (weaken (lft (split-sym sp)) (corr ÷M))
+          (unsplit-env sp γ₀ γ₁ , x ⦂ s₁))
+       ,
+       (λ t₁ →
+          eval (weaken (lft (split-sym sp)) (corr ÷N))
+          (unsplit-env sp γ₀ γ₁ , y ⦂ t₁))
+       ]
+       ih-L ⟩
+    eval (weaken (lft (split-sym sp)) (corr ÷M)) (unsplit-env sp γ₀ γ₁ , x ⦂ s) 
+  ≡⟨  Eq.cong (λ γ → eval (weaken (lft (split-sym sp)) (corr ÷M)) (γ , x ⦂ s)) (unsplit-split sp γ₀ γ₁) ⟩
+    eval (weaken (lft (split-sym sp)) (corr ÷M)) (unsplit-env (split-sym sp) γ₁ γ₀ , x ⦂ s)
+  ≡⟨⟩
+    eval (weaken (lft (split-sym sp)) (corr ÷M)) (unsplit-env (lft (split-sym sp)) (γ₁ , x ⦂ s) γ₀)
+  ≡⟨ eval-unsplit (lft (split-sym sp)) (γ₁ , x ⦂ s) γ₀ (corr ÷M) ⟩
+    ih-M)
+
