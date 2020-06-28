@@ -4,10 +4,18 @@ open import Data.Nat
 open import Data.Product
 open import Data.Sum
 open import Data.String using (String)
+open import Data.Unit
+
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_;_≢_; refl)
 open Eq.≡-Reasoning
 open import Level renaming (zero to lzero; suc to lsuc)
+
+{- TODO:
+* subtyping of refinement types
+* union types
+* intersection types
+-}
 
 Id = String
 
@@ -16,6 +24,7 @@ variable
   ℓ : Level
 
 data Expr : Set where
+  Nat : ℕ → Expr
   Var : Id → Expr
   Lam : Id → Expr → Expr
   App : Expr → Expr → Expr
@@ -24,11 +33,14 @@ data Expr : Set where
   Inl Inr : Expr → Expr
   Case : Expr → Id → Expr → Id → Expr → Expr
 
-data Type : Set where
-  Base : ℕ → Type
+data Type : Set₁ where
+  S-Nat : ℕ → Type              -- singleton type
+  Base : (P : ℕ → Set) → (∃P : Σ ℕ P) → Type -- non-empty refinement
   _⇒_ : Type → Type → Type
   _⋆_ : Type → Type → Type
   _⊹_ : Type → Type → Type
+
+T-Nat = Base (λ n → ⊤) (zero , tt) -- all natural numbers
 
 data Env (A : Set ℓ) : Set ℓ where
   · : Env A
@@ -44,6 +56,8 @@ variable
   S T U : Type
   Γ Γ₁ Γ₂ : Env Type
   L M N : Expr
+  n : ℕ
+  P : ℕ → Set
 
 data Split {A : Set ℓ} : Env A → Env A → Env A → Set ℓ where
   nil : Split · · ·
@@ -60,7 +74,11 @@ data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
       -- x ≢ y →
     x ⦂ a ∈ (E , y ⦂ a')
 
-data _⊢_⦂_ : Env Type → Expr → Type → Set where
+data _⊢_⦂_ : Env Type → Expr → Type → Set₁ where
+
+  nat : 
+    --------------------
+    Γ ⊢ Nat n ⦂ S-Nat n
 
   var :
     (x∈ : x ⦂ T ∈ Γ) →
@@ -123,6 +141,7 @@ weaken-∈ (lft sp) (there x∈) = there (weaken-∈ sp x∈)
 weaken-∈ (rgt sp) (there x∈) = there (weaken-∈ sp (there x∈))
 
 weaken : Split Γ Γ₁ Γ₂ → Γ₁ ⊢ M ⦂ T → Γ ⊢ M ⦂ T
+weaken sp (nat) = nat
 weaken sp (var x∈) = var (weaken-∈ sp x∈)
 weaken sp (lam ⊢M) = lam (weaken (lft sp) ⊢M)
 weaken sp (app ⊢M ⊢N) = app (weaken sp ⊢M) (weaken sp ⊢N)
@@ -135,7 +154,17 @@ weaken sp (sum-E ⊢L ⊢M ⊢N) = sum-E (weaken sp ⊢L) (weaken (lft sp) ⊢M)
 
 -- incorrectness typing
 
-data _⊢_÷_ : Env Type → Expr → Type → Set where
+P=n : ℕ → ℕ → Set
+P=n = λ n x → n ≡ x
+
+data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
+
+  nat :
+    --------------------
+    · ⊢ Nat n ÷ S-Nat n
+
+  var1 :
+    ( · , x ⦂ T) ⊢ Var x ÷ T
 
   var :
     x ⦂ T ∈ Γ →
@@ -180,13 +209,15 @@ record _←_ (A B : Set) : Set where
 open _←_
 
 T⟦_⟧ : Type → Set
-T⟦ Base x ⟧ = ℕ
+T⟦ S-Nat n ⟧ = Σ ℕ (λ x → x ≡ n)
+T⟦ Base P ∃P ⟧ = Σ ℕ P
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
 T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
 
 T'⟦_⟧ : Type → Set
-T'⟦ Base x ⟧ = ℕ
+T'⟦ S-Nat n ⟧ = Σ ℕ (λ x → x ≡ n)
+T'⟦ Base P ∃P ⟧ = Σ ℕ P
 T'⟦ S ⇒ T ⟧ = T'⟦ S ⟧ ← T'⟦ T ⟧
 T'⟦ S ⋆ T ⟧ = T'⟦ S ⟧ × T'⟦ T ⟧
 T'⟦ S ⊹ T ⟧ = T'⟦ S ⟧ ⊎ T'⟦ T ⟧
@@ -205,6 +236,7 @@ lookup found (γ , _ ⦂ a) = a
 lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
 
 eval : Γ ⊢ M ⦂ T → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
+eval (nat{n = n}) γ = n , refl
 eval (var x∈) γ = lookup x∈ γ
 eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
 eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
@@ -218,6 +250,8 @@ eval (sum-E{S = S}{T = T}{U = U} ⊢L ⊢M ⊢N) γ =
 
 
 corr : Γ ⊢ M ÷ T → Γ ⊢ M ⦂ T
+corr (nat) = nat
+corr var1 = var found
 corr (var x) = var x
 corr (lam ⊢M) = lam (corr ⊢M)
 corr (pair-E1 ÷M) = pair-E1 (corr ÷M)
@@ -227,7 +261,8 @@ corr (sum-E sp ÷L ÷M ÷N) = sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-
 
 -- pick one element of a type to demonstrate non-emptiness
 one : T⟦ T ⟧
-one {Base x} = 0
+one {S-Nat n} = n , refl
+one {Base P ∃P} = ∃P
 one {S ⇒ T} = λ x → one
 one {S ⋆ T} = one , one
 one {S ⊹ T} = inj₁ one
@@ -271,6 +306,7 @@ lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) (there x∈) = lookup-unsplit sp
 eval-unsplit : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
   (⊢M : Γ₁ ⊢ M ⦂ T) →
   eval (weaken sp ⊢M) (unsplit-env sp γ₁ γ₂) ≡ eval ⊢M γ₁
+eval-unsplit sp γ₁ γ₂ (nat)= refl
 eval-unsplit sp γ₁ γ₂ (var x∈) = lookup-unsplit sp γ₁ γ₂ x∈
 eval-unsplit sp γ₁ γ₂ (lam ⊢M) = ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
 eval-unsplit sp γ₁ γ₂ (app ⊢M ⊢M₁) 
@@ -297,6 +333,10 @@ lave :
   ∀ (t : T⟦ T ⟧) →
   ∃ λ (γ : iEnv E⟦ Γ ⟧) →
   eval (corr ÷M) γ ≡ t
+
+lave nat (n , refl) = · , refl
+
+lave var1 t = (· , _ ⦂ t) , refl
 lave (var x∈) t =  (gen x∈ t) , lookup-gen x∈ t
 lave (lam{x = x}{S = S} ÷M) t = · , ext aux
   where
