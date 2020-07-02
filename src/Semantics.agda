@@ -74,6 +74,40 @@ data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
       -- x ≢ y →
     x ⦂ a ∈ (E , y ⦂ a')
 
+data _<:_ : Type → Type → Set where
+
+  <:-refl :
+    T <: T
+
+  <:-single :
+    (p : P n) →
+    S-Nat n <: Base P (n , p)
+
+  <:-base :
+    (P Q : ℕ → Set) →
+    (p→q : ∀ n → P n → Q n) →
+    (∃p : ∃ P) →
+    Base P ∃p <: Base Q (proj₁ ∃p , p→q (proj₁ ∃p) (proj₂ ∃p))
+
+  <:-base-nat :
+    {∃p : ∃ P} →
+    Base P ∃p <: Nat
+    
+  <:-⇒ :
+    S′ <: S →
+    T <: T′ →
+    (S ⇒ T) <: (S′ ⇒ T′)
+    
+  <:-⋆ :
+    S <: S′ →
+    T <: T′ →
+    (S ⋆ T) <: (S′ ⋆ T′)
+
+  <:-⊹ :
+    S <: S′ →
+    T <: T′ →
+    (S ⊹ T) <: (S′ ⊹ T′)
+
 data _⊢_⦂_ : Env Type → Expr → Type → Set₁ where
 
   nat : 
@@ -200,6 +234,13 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
     (Γ₂ , y ⦂ T) ⊢ N ÷ U →
     --------------------
     Γ ⊢ Case L x M y N ÷ U
+{-
+  `sub` :
+    Γ ⊢ M ÷ S →
+    T <: S → 
+    --------------------
+    Γ ⊢ M ÷ T
+-}
 
 record _←_ (A B : Set) : Set where
   field
