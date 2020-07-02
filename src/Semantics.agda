@@ -1,15 +1,17 @@
 module Semantics where
 
-open import Data.Nat
+open import Data.Nat hiding (_⊔_; _⊓_)
 open import Data.Product
 open import Data.Sum
 open import Data.String using (String)
-open import Data.Unit
+open import Data.Unit hiding (_≟_)
+open import Data.Empty
 
+open import Relation.Nullary
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_;_≢_; refl)
 open Eq.≡-Reasoning
-open import Level renaming (zero to lzero; suc to lsuc)
+open import Level hiding (_⊔_) renaming (zero to lzero; suc to lsuc)
 
 {- TODO:
 * subtyping of refinement types
@@ -33,9 +35,23 @@ data Expr : Set where
   Inl Inr : Expr → Expr
   Case : Expr → Id → Expr → Id → Expr → Expr
 
+data RawType : Set where
+  Nat : RawType
+  _⇒_ _⋆_ _⊹_ : RawType → RawType → RawType
+
+ss⇒tt : ∀ {S S₁ T T₁ : RawType} → (S ⇒ S₁) ≡ (T ⇒ T₁) → (S ≡ T × S₁ ≡ T₁)
+ss⇒tt refl = refl , refl
+
+ss⋆tt : ∀ {S S₁ T T₁ : RawType} → (S ⋆ S₁) ≡ (T ⋆ T₁) → (S ≡ T × S₁ ≡ T₁)
+ss⋆tt refl = refl , refl
+
+ss⊹tt : ∀ {S S₁ T T₁ : RawType} → (S ⊹ S₁) ≡ (T ⊹ T₁) → (S ≡ T × S₁ ≡ T₁)
+ss⊹tt refl = refl , refl
+
 data Type : Set₁ where
   S-Nat : ℕ → Type              -- singleton type
   Base : (P : ℕ → Set) → (∃P : Σ ℕ P) → Type -- non-empty refinement
+  Nat : Type
   _⇒_ : Type → Type → Type
   _⋆_ : Type → Type → Type
   _⊹_ : Type → Type → Type
@@ -46,14 +62,52 @@ data Env (A : Set ℓ) : Set ℓ where
   · : Env A
   _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
 
-{-
-_++_ : {A : Set ℓ} → Env A → Env A → Env A
-γ ++ · = γ
-γ ++ (δ , x ⦂ v) = (γ ++ δ) , x ⦂ v
--}
+∥_∥ : Type → RawType
+∥ S-Nat x ∥ = Nat
+∥ Base P ∃P ∥ = Nat
+∥ Nat ∥ = Nat
+∥ S ⇒ S₁ ∥ = ∥ S ∥ ⇒ ∥ S₁ ∥
+∥ S ⋆ S₁ ∥ = ∥ S ∥ ⋆ ∥ S₁ ∥
+∥ S ⊹ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
+
+_⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
+
+(S-Nat x ⊔ S-Nat x₁) {r} = Base (λ y → ( y ≡ x ⊎ y ≡ x₁ )) (x , inj₁ refl)
+(S-Nat x ⊔ Base P ∃P) {r} = Base (λ y → (y ≡ x) ⊎ (P y)) (x , inj₁ refl)
+(S-Nat x ⊔ Nat) {r} = Nat
+(Base P ∃P ⊔ S-Nat x) {r} = Base (λ y → ( y ≡ x ⊎ P y)) (x , (inj₁ refl))
+(Base P (x , Px) ⊔ Base P₁ ∃P₁) {r} = Base (λ y → P y ⊎ P₁ y) (x , (inj₁ Px))
+(Base P ∃P ⊔ Nat) {r} = Nat
+(Nat ⊔ S-Nat x) {r} = Nat
+(Nat ⊔ Base P ∃P) {r} = Nat
+(Nat ⊔ Nat) {r} = Nat
+((S ⇒ S₁) ⊔ (T ⇒ T₁)) {r} with ss⇒tt r
+... | sss , ttt = (S ⊓ T){sss} ⇒ (S₁ ⊔ T₁){ttt}
+((S ⋆ S₁) ⊔ (T ⋆ T₁)) {r} with ss⋆tt r
+... | sss , ttt = (S ⊔ T){sss} ⋆ (S₁ ⊔ T₁){ttt}
+((S ⊹ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
+... | sss , ttt = (S ⊔ T){sss} ⊹ (S₁ ⊔ T₁){ttt}
+
+S-Nat x ⊓ S-Nat x₁ with x ≟ x₁
+... | no ¬p = Base (λ n → ⊥) (x , (¬p {!!}))
+... | yes p = S-Nat x
+S-Nat x ⊓ Base P ∃P = {!!}
+S-Nat x ⊓ Nat = S-Nat x
+Base P ∃P ⊓ S-Nat x = {!!}
+Base P ∃P ⊓ Base P₁ ∃P₁ = Base (λ n → (P n) × (P₁ n)) {!!}
+Base P ∃P ⊓ Nat = Base P ∃P
+Nat ⊓ S-Nat x = S-Nat x
+Nat ⊓ Base P ∃P = Base P ∃P
+Nat ⊓ Nat = Nat
+((S ⇒ S₁) ⊓ (T ⇒ T₁)){r} with ss⇒tt r
+... | sss , ttt = (S ⊔ T){sss} ⇒ (S₁ ⊓ T₁){ttt}
+((S ⋆ S₁) ⊓ (T ⋆ T₁)){r} with ss⋆tt r
+... | sss , ttt = (S ⊓ T){sss} ⋆ (S₁ ⊓ T₁){ttt}
+((S ⊹ S₁) ⊓ (T ⊹ T₁)){r} with ss⊹tt r
+... | sss , ttt = (S ⊓ T){sss} ⊹ (S₁ ⊓ T₁){ttt}
 
 variable
-  S T U : Type
+  S T U S′ T′ : Type
   Γ Γ₁ Γ₂ : Env Type
   L M N : Expr
   n : ℕ
@@ -252,6 +306,7 @@ open _←_
 T⟦_⟧ : Type → Set
 T⟦ S-Nat n ⟧ = Σ ℕ (λ x → x ≡ n)
 T⟦ Base P ∃P ⟧ = Σ ℕ P
+T⟦ Nat ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
 T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
@@ -259,6 +314,7 @@ T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
 T'⟦_⟧ : Type → Set
 T'⟦ S-Nat n ⟧ = Σ ℕ (λ x → x ≡ n)
 T'⟦ Base P ∃P ⟧ = Σ ℕ P
+T'⟦ Nat ⟧ = ℕ
 T'⟦ S ⇒ T ⟧ = T'⟦ S ⟧ ← T'⟦ T ⟧
 T'⟦ S ⋆ T ⟧ = T'⟦ S ⟧ × T'⟦ T ⟧
 T'⟦ S ⊹ T ⟧ = T'⟦ S ⟧ ⊎ T'⟦ T ⟧
@@ -299,11 +355,15 @@ corr (pair-E1 ÷M) = pair-E1 (corr ÷M)
 corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
 corr (pair sp ÷M ÷N) = pair (weaken sp (corr ÷M)) (weaken (split-sym sp) (corr ÷N))
 corr (sum-E sp ÷L ÷M ÷N) = sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr ÷M)) (weaken (lft (split-sym sp)) (corr ÷N))
+{-
+corr (`sub` ÷M T<S) = {!÷M!}
+-}
 
 -- pick one element of a type to demonstrate non-emptiness
 one : T⟦ T ⟧
 one {S-Nat n} = n , refl
 one {Base P ∃P} = ∃P
+one {Nat} = zero
 one {S ⇒ T} = λ x → one
 one {S ⋆ T} = one , one
 one {S ⊹ T} = inj₁ one
