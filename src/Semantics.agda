@@ -48,8 +48,8 @@ ss⋆tt refl = refl , refl
 ss⊹tt : ∀ {S S₁ T T₁ : RawType} → (S ⊹ S₁) ≡ (T ⊹ T₁) → (S ≡ T × S₁ ≡ T₁)
 ss⊹tt refl = refl , refl
 
+
 data Type : Set₁ where
-  S-Nat : ℕ → Type              -- singleton type
   Base : (P : ℕ → Set) → (∃P : Σ ℕ P) → Type -- non-empty refinement
   Nat : Type
   _⇒_ : Type → Type → Type
@@ -63,24 +63,31 @@ data Env (A : Set ℓ) : Set ℓ where
   _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
 
 ∥_∥ : Type → RawType
-∥ S-Nat x ∥ = Nat
 ∥ Base P ∃P ∥ = Nat
 ∥ Nat ∥ = Nat
 ∥ S ⇒ S₁ ∥ = ∥ S ∥ ⇒ ∥ S₁ ∥
 ∥ S ⋆ S₁ ∥ = ∥ S ∥ ⋆ ∥ S₁ ∥
 ∥ S ⊹ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
 
+
+_∨_ : (P Q : ℕ → Set) → ℕ → Set
+P ∨ Q = λ n → P n ⊎ Q n
+
+_∧_ : (P Q : ℕ → Set) → ℕ → Set
+P ∧ Q = λ n → P n × Q n
+
+implies : ∀ {P Q : ℕ → Set} → (n : ℕ) → P n → (P n ⊎ Q n)
+implies n Pn = inj₁ Pn
+
+p*q->p : ∀ {P Q : ℕ → Set} → (n : ℕ) → (P n × Q n) → P n
+p*q->p n (Pn , Qn) = Pn
+
 _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 
-(S-Nat x ⊔ S-Nat x₁) {r} = Base (λ y → ( y ≡ x ⊎ y ≡ x₁ )) (x , inj₁ refl)
-(S-Nat x ⊔ Base P ∃P) {r} = Base (λ y → (y ≡ x) ⊎ (P y)) (x , inj₁ refl)
-(S-Nat x ⊔ Nat) {r} = Nat
-(Base P ∃P ⊔ S-Nat x) {r} = Base (λ y → ( y ≡ x ⊎ P y)) (x , (inj₁ refl))
-(Base P (x , Px) ⊔ Base P₁ ∃P₁) {r} = Base (λ y → P y ⊎ P₁ y) (x , (inj₁ Px))
-(Base P ∃P ⊔ Nat) {r} = Nat
-(Nat ⊔ S-Nat x) {r} = Nat
-(Nat ⊔ Base P ∃P) {r} = Nat
-(Nat ⊔ Nat) {r} = Nat
+(Base P (x , Px) ⊔ Base P₁ ∃P₁) {refl} = Base (P ∨ P₁) (x , (inj₁ Px))
+(Base P ∃P ⊔ Nat) = Nat
+(Nat ⊔ Base P ∃P) = Nat
+(Nat ⊔ Nat) = Nat
 ((S ⇒ S₁) ⊔ (T ⇒ T₁)) {r} with ss⇒tt r
 ... | sss , ttt = (S ⊓ T){sss} ⇒ (S₁ ⊔ T₁){ttt}
 ((S ⋆ S₁) ⊔ (T ⋆ T₁)) {r} with ss⋆tt r
@@ -88,15 +95,8 @@ _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 ((S ⊹ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
 ... | sss , ttt = (S ⊔ T){sss} ⊹ (S₁ ⊔ T₁){ttt}
 
-S-Nat x ⊓ S-Nat x₁ with x ≟ x₁
-... | no ¬p = Base (λ n → ⊥) (x , (¬p {!!}))
-... | yes p = S-Nat x
-S-Nat x ⊓ Base P ∃P = {!!}
-S-Nat x ⊓ Nat = S-Nat x
-Base P ∃P ⊓ S-Nat x = {!!}
-Base P ∃P ⊓ Base P₁ ∃P₁ = Base (λ n → (P n) × (P₁ n)) {!!}
+Base P ∃P ⊓ Base P₁ ∃P₁ = Base (P ∧ P₁) {!!}
 Base P ∃P ⊓ Nat = Base P ∃P
-Nat ⊓ S-Nat x = S-Nat x
 Nat ⊓ Base P ∃P = Base P ∃P
 Nat ⊓ Nat = Nat
 ((S ⇒ S₁) ⊓ (T ⇒ T₁)){r} with ss⇒tt r
@@ -106,8 +106,9 @@ Nat ⊓ Nat = Nat
 ((S ⊹ S₁) ⊓ (T ⊹ T₁)){r} with ss⊹tt r
 ... | sss , ttt = (S ⊓ T){sss} ⊹ (S₁ ⊓ T₁){ttt}
 
+
 variable
-  S T U S′ T′ : Type
+  S T U S′ T′ U′ U″ : Type
   Γ Γ₁ Γ₂ : Env Type
   L M N : Expr
   n : ℕ
@@ -133,15 +134,13 @@ data _<:_ : Type → Type → Set where
   <:-refl :
     T <: T
 
-  <:-single :
-    (p : P n) →
-    S-Nat n <: Base P (n , p)
-
-  <:-base :
+  <:-base : 
     (P Q : ℕ → Set) →
     (p→q : ∀ n → P n → Q n) →
     (∃p : ∃ P) →
-    Base P ∃p <: Base Q (proj₁ ∃p , p→q (proj₁ ∃p) (proj₂ ∃p))
+    {∃q : ∃ Q} →
+    (pp : ∃q ≡  (proj₁ ∃p , p→q (proj₁ ∃p) (proj₂ ∃p))) →
+    Base P ∃p <: Base Q ∃q
 
   <:-base-nat :
     {∃p : ∃ P} →
@@ -162,11 +161,47 @@ data _<:_ : Type → Type → Set where
     T <: T′ →
     (S ⊹ T) <: (S′ ⊹ T′)
 
+-- subtyping is compatible with raw types
+
+<:-raw : S <: T → ∥ S ∥ ≡ ∥ T ∥
+<:-raw <:-refl = refl
+<:-raw (<:-base P Q p→q ∃p refl) = refl
+<:-raw <:-base-nat = refl
+<:-raw (<:-⇒ s<:t s<:t₁) = Eq.cong₂ _⇒_ (Eq.sym (<:-raw s<:t)) (<:-raw s<:t₁)
+<:-raw (<:-⋆ s<:t s<:t₁) = Eq.cong₂ _⋆_ (<:-raw s<:t) (<:-raw s<:t₁)
+<:-raw (<:-⊹ s<:t s<:t₁) = Eq.cong₂ _⊹_ (<:-raw s<:t) (<:-raw s<:t₁)
+
+<:-⊔ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → S <: (S ⊔ T){c}
+<:-⊓ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → (S ⊓ T){c} <: S
+
+<:-⊔ (Base P ∃P) (Base P₁ ∃P₁) {refl} = <:-base P (P ∨ P₁) implies ∃P refl
+<:-⊔ (Base P ∃P) Nat = <:-base-nat
+<:-⊔ Nat (Base P ∃P) = <:-refl
+<:-⊔ Nat Nat = <:-refl
+<:-⊔ (S ⇒ S₁) (T ⇒ T₁) {c} with ss⇒tt c
+... | c1 , c2 = <:-⇒ (<:-⊓ S T) (<:-⊔ S₁ T₁)
+<:-⊔ (S ⋆ S₁) (T ⋆ T₁) {c} with ss⋆tt c
+... | c1 , c2 = <:-⋆ (<:-⊔ S T) (<:-⊔ S₁ T₁)
+<:-⊔ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
+... | c1 , c2 = <:-⊹ (<:-⊔ S T) (<:-⊔ S₁ T₁)
+
+<:-⊓ (Base P ∃P) (Base P₁ ∃P₁) {refl} = <:-base (P ∧ P₁) P p*q->p {!!} {!!} 
+<:-⊓ (Base P ∃P) Nat = <:-refl
+<:-⊓ Nat (Base P ∃P) = <:-base-nat
+<:-⊓ Nat Nat = <:-refl
+<:-⊓ (S ⇒ S₁) (T ⇒ T₁) {c} with ss⇒tt c
+... | c1 , c2 = <:-⇒ (<:-⊔ S T) (<:-⊓ S₁ T₁)
+<:-⊓ (S ⋆ S₁) (T ⋆ T₁) {c} with ss⋆tt c
+... | c1 , c2 = <:-⋆ (<:-⊓ S T) (<:-⊓ S₁ T₁)
+<:-⊓ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
+... | c1 , c2 = <:-⊹ (<:-⊓ S T) (<:-⊓ S₁ T₁)
+
+-- should be in terms of RawType for evaluation
+
 data _⊢_⦂_ : Env Type → Expr → Type → Set₁ where
 
-  nat : 
-    --------------------
-    Γ ⊢ Nat n ⦂ S-Nat n
+  nat' :
+    Γ ⊢ Nat n ⦂ Base (_≡_ n) (n , refl)
 
   var :
     (x∈ : x ⦂ T ∈ Γ) →
@@ -229,7 +264,7 @@ weaken-∈ (lft sp) (there x∈) = there (weaken-∈ sp x∈)
 weaken-∈ (rgt sp) (there x∈) = there (weaken-∈ sp (there x∈))
 
 weaken : Split Γ Γ₁ Γ₂ → Γ₁ ⊢ M ⦂ T → Γ ⊢ M ⦂ T
-weaken sp (nat) = nat
+weaken sp (nat') = nat'
 weaken sp (var x∈) = var (weaken-∈ sp x∈)
 weaken sp (lam ⊢M) = lam (weaken (lft sp) ⊢M)
 weaken sp (app ⊢M ⊢N) = app (weaken sp ⊢M) (weaken sp ⊢N)
@@ -247,17 +282,19 @@ P=n = λ n x → n ≡ x
 
 data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
-  nat :
+  nat' :
     --------------------
-    · ⊢ Nat n ÷ S-Nat n
+    · ⊢ Nat n ÷ Base (_≡_ n) (n , refl)
 
   var1 :
     ( · , x ⦂ T) ⊢ Var x ÷ T
 
+{-
   var :
     x ⦂ T ∈ Γ →
     --------------------
     Γ ⊢ Var x ÷ T
+-}
 
   lam :
     (· , x ⦂ S) ⊢ M ÷ T →
@@ -288,6 +325,16 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
     (Γ₂ , y ⦂ T) ⊢ N ÷ U →
     --------------------
     Γ ⊢ Case L x M y N ÷ U
+
+  sum-E′ :
+    Split Γ Γ₁ Γ₂ →
+    Γ₁ ⊢ L ÷ (S ⊹ T) →
+    (Γ₂ , x ⦂ S) ⊢ M ÷ U′ →
+    (Γ₂ , y ⦂ T) ⊢ N ÷ U″ →
+    U ≡ U′ ⊔ U″ →
+    --------------------
+    Γ ⊢ Case L x M y N ÷ U
+
 {-
   `sub` :
     Γ ⊢ M ÷ S →
@@ -304,7 +351,6 @@ record _←_ (A B : Set) : Set where
 open _←_
 
 T⟦_⟧ : Type → Set
-T⟦ S-Nat n ⟧ = Σ ℕ (λ x → x ≡ n)
 T⟦ Base P ∃P ⟧ = Σ ℕ P
 T⟦ Nat ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
@@ -312,7 +358,6 @@ T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
 
 T'⟦_⟧ : Type → Set
-T'⟦ S-Nat n ⟧ = Σ ℕ (λ x → x ≡ n)
 T'⟦ Base P ∃P ⟧ = Σ ℕ P
 T'⟦ Nat ⟧ = ℕ
 T'⟦ S ⇒ T ⟧ = T'⟦ S ⟧ ← T'⟦ T ⟧
@@ -333,7 +378,7 @@ lookup found (γ , _ ⦂ a) = a
 lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
 
 eval : Γ ⊢ M ⦂ T → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
-eval (nat{n = n}) γ = n , refl
+eval (nat'{n = n}) γ = n , refl
 eval (var x∈) γ = lookup x∈ γ
 eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
 eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
@@ -347,21 +392,21 @@ eval (sum-E{S = S}{T = T}{U = U} ⊢L ⊢M ⊢N) γ =
 
 
 corr : Γ ⊢ M ÷ T → Γ ⊢ M ⦂ T
-corr (nat) = nat
+corr (nat') = nat'
 corr var1 = var found
-corr (var x) = var x
+-- corr (var x) = var x
 corr (lam ⊢M) = lam (corr ⊢M)
 corr (pair-E1 ÷M) = pair-E1 (corr ÷M)
 corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
 corr (pair sp ÷M ÷N) = pair (weaken sp (corr ÷M)) (weaken (split-sym sp) (corr ÷N))
 corr (sum-E sp ÷L ÷M ÷N) = sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr ÷M)) (weaken (lft (split-sym sp)) (corr ÷N))
+corr (sum-E′ sp ÷L ÷M ÷N U′≡U″) = sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr {!!})) (weaken (lft (split-sym sp)) (corr {!!}))
 {-
 corr (`sub` ÷M T<S) = {!÷M!}
 -}
 
 -- pick one element of a type to demonstrate non-emptiness
 one : T⟦ T ⟧
-one {S-Nat n} = n , refl
 one {Base P ∃P} = ∃P
 one {Nat} = zero
 one {S ⇒ T} = λ x → one
@@ -407,7 +452,7 @@ lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) (there x∈) = lookup-unsplit sp
 eval-unsplit : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
   (⊢M : Γ₁ ⊢ M ⦂ T) →
   eval (weaken sp ⊢M) (unsplit-env sp γ₁ γ₂) ≡ eval ⊢M γ₁
-eval-unsplit sp γ₁ γ₂ (nat)= refl
+eval-unsplit sp γ₁ γ₂ (nat')= refl
 eval-unsplit sp γ₁ γ₂ (var x∈) = lookup-unsplit sp γ₁ γ₂ x∈
 eval-unsplit sp γ₁ γ₂ (lam ⊢M) = ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
 eval-unsplit sp γ₁ γ₂ (app ⊢M ⊢M₁) 
@@ -435,10 +480,10 @@ lave :
   ∃ λ (γ : iEnv E⟦ Γ ⟧) →
   eval (corr ÷M) γ ≡ t
 
-lave nat (n , refl) = · , refl
+lave nat' (n , refl) = · , refl
 
 lave var1 t = (· , _ ⦂ t) , refl
-lave (var x∈) t =  (gen x∈ t) , lookup-gen x∈ t
+-- lave (var x∈) t =  (gen x∈ t) , lookup-gen x∈ t
 lave (lam{x = x}{S = S} ÷M) t = · , ext aux
   where
     aux : (s : T⟦ S ⟧) → eval (corr ÷M) (· , x ⦂ s) ≡ t s
