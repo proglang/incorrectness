@@ -1,5 +1,6 @@
 module RawSemantics where
 
+open import Data.Maybe
 open import Data.Nat hiding (_⊔_; _⊓_)
 open import Data.Product
 open import Data.Sum
@@ -23,7 +24,8 @@ Id = String
 
 variable
   x y : Id
-  ℓ : Level
+  ℓ ℓ′ : Level
+  n : ℕ
 
 data Expr : Set where
   Nat : ℕ → Expr
@@ -35,9 +37,13 @@ data Expr : Set where
   Inl Inr : Expr → Expr
   Case : Expr → Id → Expr → Id → Expr → Expr
 
+-- raw types are the types which support standard execution
+-- currently just simple types
+
 data RawType : Set where
   Nat : RawType
   _⇒_ _⋆_ _⊹_ : RawType → RawType → RawType
+
 
 ss⇒tt : ∀ {S S₁ T T₁ : RawType} → (S ⇒ S₁) ≡ (T ⇒ T₁) → (S ≡ T × S₁ ≡ T₁)
 ss⇒tt refl = refl , refl
@@ -48,6 +54,123 @@ ss⋆tt refl = refl , refl
 ss⊹tt : ∀ {S S₁ T T₁ : RawType} → (S ⊹ S₁) ≡ (T ⊹ T₁) → (S ≡ T × S₁ ≡ T₁)
 ss⊹tt refl = refl , refl
 
+-- semantics of raw types
+R⟦_⟧ : RawType → Set
+R⟦ Nat ⟧ = ℕ
+R⟦ S ⇒ T ⟧ = R⟦ S ⟧ → R⟦ T ⟧
+R⟦ S ⋆ T ⟧ = R⟦ S ⟧ × R⟦ T ⟧
+R⟦ S ⊹ T ⟧ = R⟦ S ⟧ ⊎ R⟦ T ⟧
+
+
+data Env (A : Set ℓ) : Set ℓ where
+  · : Env A
+  _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
+
+variable
+  L M N : Expr
+
+  RS RT RU RV RW : RawType
+  Δ Δ₁ Δ₂ : Env RawType
+
+-- mapping a function over an environment
+
+_⁺ : ∀ {A : Set ℓ′}{B : Set ℓ} → (A → B) → (Env A → Env B)
+(f ⁺) · = ·
+(f ⁺) (Φ , x ⦂ a) = (f ⁺) Φ , x ⦂ f a
+
+RE⟦_⟧ : Env RawType → Env Set
+RE⟦_⟧ = R⟦_⟧ ⁺
+
+data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
+
+  found : ∀ {a : A}{E : Env A} →
+    x ⦂ a ∈ (E , x ⦂ a)
+
+  there : ∀ {a a' : A}{E : Env A} →
+    x ⦂ a ∈ E →
+      -- x ≢ y →
+    x ⦂ a ∈ (E , y ⦂ a')
+
+data iEnv : Env Set → Set where
+  · : iEnv ·
+  _,_⦂_ : ∀ {E}{A} → iEnv E → (x : Id) → (a : A) → iEnv (E , x ⦂ A)
+
+-- should be in terms of RawType for evaluation
+
+data _⊢_⦂_ : Env RawType → Expr → RawType → Set₁ where
+
+  nat :
+    Δ ⊢ Nat n ⦂ Nat
+
+  var :
+    (x∈ : x ⦂ RT ∈ Δ) →
+    --------------------
+    Δ ⊢ Var x ⦂ RT
+
+  lam :
+    (Δ , x ⦂ RS) ⊢ M ⦂ RT →
+    --------------------
+    Δ ⊢ Lam x M ⦂ (RS ⇒ RT)
+
+  app :
+    Δ ⊢ M ⦂ (RS ⇒ RT) →
+    Δ ⊢ N ⦂ RS →
+    --------------------
+    Δ ⊢ App M N ⦂ RT
+
+  pair :
+    Δ ⊢ M ⦂ RS →
+    Δ ⊢ N ⦂ RT →
+    --------------------
+    Δ ⊢ Pair M N ⦂ (RS ⋆ RT)
+
+  pair-E1 :
+    Δ ⊢ M ⦂ (RS ⋆ RT) →
+    --------------------
+    Δ ⊢ Fst M ⦂ RS
+
+  pair-E2 :
+    Δ ⊢ M ⦂ (RS ⋆ RT) →
+    --------------------
+    Δ ⊢ Snd M ⦂ RT
+
+  sum-I1 :
+    Δ ⊢ M ⦂ RS →
+    --------------------
+    Δ ⊢ Inl M ⦂ (RS ⊹ RT)
+
+  sum-I2 :
+    Δ ⊢ N ⦂ RT →
+    --------------------
+    Δ ⊢ Inl N ⦂ (RS ⊹ RT)
+  
+  sum-E :
+    Δ ⊢ L ⦂ (RS ⊹ RT) →
+    (Δ , x ⦂ RS) ⊢ M ⦂ RU →
+    (Δ , y ⦂ RT) ⊢ N ⦂ RV →
+    RW ≡ RU × RW ≡ RV →
+    --------------------
+    Δ ⊢ Case L x M y N ⦂ RW
+
+lookup : (x ⦂ RT ∈ Δ) → iEnv RE⟦ Δ ⟧ → R⟦ RT ⟧
+lookup found (γ , _ ⦂ a) = a
+lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
+
+eval : Δ ⊢ M ⦂ RT → iEnv RE⟦ Δ ⟧ → R⟦ RT ⟧
+eval (nat{n = n}) γ = n
+eval (var x∈) γ = lookup x∈ γ
+eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
+eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
+eval (pair ⊢M ⊢N) γ = (eval ⊢M γ) , (eval ⊢N γ)
+eval (pair-E1 ⊢M) γ = proj₁ (eval ⊢M γ)
+eval (pair-E2 ⊢M) γ = proj₂ (eval ⊢M γ)
+eval (sum-I1 ⊢M) γ = inj₁ (eval ⊢M γ)
+eval (sum-I2 ⊢N) γ = inj₂ (eval ⊢N γ)
+eval (sum-E ⊢L ⊢M ⊢N (refl , refl)) γ =
+  [ (λ s → eval ⊢M (γ , _ ⦂ s)) , (λ t → eval ⊢N (γ , _ ⦂ t)) ] (eval ⊢L γ)
+
+----------------------------------------------------------------------
+-- refinement types that drive the incorrectness typing
 
 data Type : Set₁ where
   Base : (P : ℕ → Set) → Type -- refinement
@@ -55,6 +178,8 @@ data Type : Set₁ where
   _⇒_ _⋆_ _⊹_ : (S : Type) (T : Type) → Type
 
 T-Nat = Base (λ n → ⊤) -- all natural numbers
+
+-- characterize non-empty types
 
 data ne : Type → Set where
   ne-base : ∀ {P} → (∃P : Σ ℕ P) → ne (Base P)
@@ -64,10 +189,6 @@ data ne : Type → Set where
   ne-⊹L : ∀ {S T} → ne S → ne (S ⊹ T)
   ne-⊹R : ∀ {S T} → ne T → ne (S ⊹ T)
 
-data Env (A : Set ℓ) : Set ℓ where
-  · : Env A
-  _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
-
 ∥_∥ : Type → RawType
 ∥ Base P ∥ = Nat
 ∥ Nat ∥ = Nat
@@ -75,6 +196,30 @@ data Env (A : Set ℓ) : Set ℓ where
 ∥ S ⋆ S₁ ∥ = ∥ S ∥ ⋆ ∥ S₁ ∥
 ∥ S ⊹ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
 
+T⟦_⟧ : Type → Set
+T⟦ Base P ⟧ = Σ ℕ P
+T⟦ Nat ⟧ = ℕ
+T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
+T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
+T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
+
+E⟦_⟧ : Env Type → Env Set
+E⟦_⟧ = T⟦_⟧ ⁺
+
+∥_∥⁺ : Env Type → Env RawType
+∥_∥⁺ = ∥_∥ ⁺
+
+-- a value is a member of refinement type T
+
+_∋_ : (T : Type) → R⟦ ∥ T ∥ ⟧ → Set
+Base P ∋ x = P x
+Nat ∋ x = ⊤
+(T ⇒ T₁) ∋ f = ∀ x → T ∋ x → T₁ ∋ f x
+(T ⋆ T₁) ∋ (fst , snd) = T ∋ fst × T₁ ∋ snd
+(T ⊹ T₁) ∋ inj₁ x = T ∋ x
+(T ⊹ T₁) ∋ inj₂ y = T₁ ∋ y
+
+-- operations on predicates 
 _∨_ : (P Q : ℕ → Set) → ℕ → Set
 P ∨ Q = λ n → P n ⊎ Q n
 
@@ -111,31 +256,52 @@ Nat ⊓ Nat = Nat
 ((S ⊹ S₁) ⊓ (T ⊹ T₁)){r} with ss⊹tt r
 ... | sss , ttt = (S ⊓ T){sss} ⊹ (S₁ ⊓ T₁){ttt}
 
-
 variable
   S T U S′ T′ U′ U″ : Type
   Γ Γ₁ Γ₂ : Env Type
-  L M N : Expr
-  n : ℕ
   P : ℕ → Set
   A : Set ℓ
   a : A
   Φ Φ₁ Φ₂ : Env A
+
+⊔-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} → ∥ (S ⊔ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊔ T){st} ∥ ≡ ∥ T ∥
+⊓-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} → ∥ (S ⊓ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊓ T){st} ∥ ≡ ∥ T ∥
+
+⊔-preserves (Base P) (Base P₁) {refl} = refl , refl
+⊔-preserves (Base P) Nat {st} = refl , refl
+⊔-preserves Nat (Base P) {st} = refl , refl
+⊔-preserves Nat Nat {st} = refl , refl
+⊔-preserves (S ⇒ S₁) (T ⇒ T₁) {st} with ss⇒tt st
+... | sss , ttt with ⊓-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+⊔-preserves (S ⋆ S₁) (T ⋆ T₁) {st} with ss⋆tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+⊔-preserves (S ⊹ S₁) (T ⊹ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+
+⊓-preserves (Base P) (Base P₁) {st} = refl , refl
+⊓-preserves (Base P) Nat {st} = refl , refl
+⊓-preserves Nat (Base P) {st} = refl , refl
+⊓-preserves Nat Nat {st} = refl , refl
+⊓-preserves (S ⇒ S₁) (T ⇒ T₁) {st} with ss⇒tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊓-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s1 , sut=t1 rewrite sut=s | sut=s1 = refl , st
+⊓-preserves (S ⋆ S₁) (T ⋆ T₁) {st} with ss⋆tt st
+... | sss , ttt with ⊓-preserves S T {sss} | ⊓-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s1 , sut=t1 rewrite sut=s | sut=s1 = refl , st
+⊓-preserves (S ⊹ S₁) (T ⊹ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊓-preserves S T {sss} | ⊓-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s1 , sut=t1 rewrite sut=s | sut=s1 = refl , st
+
 
 data Split {A : Set ℓ} : Env A → Env A → Env A → Set ℓ where
   nil : Split · · ·
   lft : ∀ {a : A}{Γ Γ₁ Γ₂ : Env A} → Split Γ Γ₁ Γ₂ → Split (Γ , x ⦂ a) (Γ₁ , x ⦂ a) Γ₂
   rgt : ∀ {a : A}{Γ Γ₁ Γ₂ : Env A} → Split Γ Γ₁ Γ₂ → Split (Γ , x ⦂ a) Γ₁ (Γ₂ , x ⦂ a)
 
-data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
-
-  found : ∀ {a : A}{E : Env A} →
-    x ⦂ a ∈ (E , x ⦂ a)
-
-  there : ∀ {a a' : A}{E : Env A} →
-    x ⦂ a ∈ E →
-      -- x ≢ y →
-    x ⦂ a ∈ (E , y ⦂ a')
+-- subtyping
 
 data _<:_ : Type → Type → Set where
 
@@ -200,65 +366,6 @@ data _<:_ : Type → Type → Set where
 <:-⊓ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
 ... | c1 , c2 = <:-⊹ (<:-⊓ S T) (<:-⊓ S₁ T₁)
 
--- should be in terms of RawType for evaluation
-
-variable
-  RS RT RU : RawType
-  Δ Δ₁ Δ₂ : Env RawType
-
-data _⊢_⦂_ : Env RawType → Expr → RawType → Set₁ where
-
-  nat :
-    Δ ⊢ Nat n ⦂ Nat
-
-  var :
-    (x∈ : x ⦂ RT ∈ Δ) →
-    --------------------
-    Δ ⊢ Var x ⦂ RT
-
-  lam :
-    (Δ , x ⦂ RS) ⊢ M ⦂ RT →
-    --------------------
-    Δ ⊢ Lam x M ⦂ (RS ⇒ RT)
-
-  app :
-    Δ ⊢ M ⦂ (RS ⇒ RT) →
-    Δ ⊢ N ⦂ RS →
-    --------------------
-    Δ ⊢ App M N ⦂ RT
-
-  pair :
-    Δ ⊢ M ⦂ RS →
-    Δ ⊢ N ⦂ RT →
-    --------------------
-    Δ ⊢ Pair M N ⦂ (RS ⋆ RT)
-
-  pair-E1 :
-    Δ ⊢ M ⦂ (RS ⋆ RT) →
-    --------------------
-    Δ ⊢ Fst M ⦂ RS
-
-  pair-E2 :
-    Δ ⊢ M ⦂ (RS ⋆ RT) →
-    --------------------
-    Δ ⊢ Snd M ⦂ RT
-
-  sum-I1 :
-    Δ ⊢ M ⦂ RS →
-    --------------------
-    Δ ⊢ Inl M ⦂ (RS ⊹ RT)
-
-  sum-I2 :
-    Δ ⊢ N ⦂ RT →
-    --------------------
-    Δ ⊢ Inl N ⦂ (RS ⊹ RT)
-  
-  sum-E :
-    Δ ⊢ L ⦂ (RS ⊹ RT) →
-    (Δ , x ⦂ RS) ⊢ M ⦂ RU →
-    (Δ , y ⦂ RT) ⊢ N ⦂ RU →
-    --------------------
-    Δ ⊢ Case L x M y N ⦂ RU
 
 split-sym : Split Φ Φ₁ Φ₂ → Split Φ Φ₂ Φ₁
 split-sym nil = nil
@@ -281,12 +388,49 @@ weaken sp (pair-E1 ⊢M) = pair-E1 (weaken sp ⊢M)
 weaken sp (pair-E2 ⊢M) = pair-E2 (weaken sp ⊢M)
 weaken sp (sum-I1 ⊢M) = sum-I1 (weaken sp ⊢M)
 weaken sp (sum-I2 ⊢N) = sum-I2 (weaken sp ⊢N)
-weaken sp (sum-E ⊢L ⊢M ⊢N) = sum-E (weaken sp ⊢L) (weaken (lft sp) ⊢M) (weaken (lft sp) ⊢N)
+weaken sp (sum-E ⊢L ⊢M ⊢N (RT=RU , RT=RV)) =
+  sum-E (weaken sp ⊢L) (weaken (lft sp) ⊢M) (weaken (lft sp) ⊢N) (RT=RU , RT=RV)
 
 -- incorrectness typing
 
-P=n : ℕ → ℕ → Set
-P=n = λ n x → n ≡ x
+-- attempt to map type (interpretation) to corresponding raw type (interpretation)
+-- * must be monadic because of refinement
+-- * fails at function types
+toRaw : ∀ T → T⟦ T ⟧ → Maybe R⟦ ∥ T ∥ ⟧
+fromRaw : ∀ T → R⟦ ∥ T ∥ ⟧ → Maybe T⟦ T ⟧
+
+toRaw (Base P) (n , Pn) = just n
+toRaw Nat n = just n
+toRaw (T ⇒ T₁) t = {!!}
+toRaw (T ⋆ T₁) (t , t₁) = toRaw T t >>= (λ r → toRaw T₁ t₁ >>= (λ r₁ → just (r , r₁)))
+toRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (toRaw T x)
+toRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (toRaw T₁ y)
+
+fromRaw (Base P) r = {!!}       -- need a Decidable P here
+fromRaw Nat r = just r
+fromRaw (T ⇒ T₁) r = {!!}
+fromRaw (T ⋆ T₁) r = {!!}
+fromRaw (T ⊹ T₁) r = {!!}
+
+module rule-by-rule where
+
+  data
+    _⊢_÷_ : Env Type → Expr → Type → Set₁ 
+   where
+    nat' :
+      --------------------
+      · ⊢ Nat n ÷ Base (_≡_ n)
+
+  corr : Γ ⊢ M ÷ T → ∥ Γ ∥⁺ ⊢ M ⦂ ∥ T ∥
+  corr nat' = nat
+
+  lave :
+    (÷M : Γ ⊢ M ÷ T) →
+    ∀ (t : T⟦ T ⟧) →
+    ∃ λ (γ : iEnv E⟦ Γ ⟧) →
+    eval (corr ÷M) {!!} ≡ {!!}
+  lave = {!!}
+
 
 data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
@@ -351,67 +495,7 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
     Γ ⊢ M ÷ T
 -}
 
-record _←_ (A B : Set) : Set where
-  field
-    func : A → B
-    back : ∀ (b : B) → ∃ λ (a : A) → func a ≡ b
 
-open _←_
-
-R⟦_⟧ : RawType → Set
-R⟦ Nat ⟧ = ℕ
-R⟦ S ⇒ T ⟧ = R⟦ S ⟧ → R⟦ T ⟧
-R⟦ S ⋆ T ⟧ = R⟦ S ⟧ × R⟦ T ⟧
-R⟦ S ⊹ T ⟧ = R⟦ S ⟧ ⊎ R⟦ T ⟧
-
-T⟦_⟧ : Type → Set
-T⟦ Base P ⟧ = Σ ℕ P
-T⟦ Nat ⟧ = ℕ
-T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
-T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
-T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
-
-_∋_ : (T : Type) → R⟦ ∥ T ∥ ⟧ → Set
-Base P ∋ x = P x
-Nat ∋ x = ⊤
-(T ⇒ T₁) ∋ f = ∀ x → T ∋ x → T₁ ∋ f x
-(T ⋆ T₁) ∋ (fst , snd) = T ∋ fst × T₁ ∋ snd
-(T ⊹ T₁) ∋ inj₁ x = T ∋ x
-(T ⊹ T₁) ∋ inj₂ y = T₁ ∋ y
-
-_⁺ : ∀ {B : Set ℓ} → (A → B) → (Env A → Env B)
-(f ⁺) · = ·
-(f ⁺) (Φ , x ⦂ a) = (f ⁺) Φ , x ⦂ f a
-
-E⟦_⟧ : Env Type → Env Set
-E⟦_⟧ = T⟦_⟧ ⁺
-
-RE⟦_⟧ : Env RawType → Env Set
-RE⟦_⟧ = R⟦_⟧ ⁺
-
-∥_∥⁺ : Env Type → Env RawType
-∥_∥⁺ = ∥_∥ ⁺
-
-data iEnv : Env Set → Set where
-  · : iEnv ·
-  _,_⦂_ : ∀ {E}{A} → iEnv E → (x : Id) → (a : A) → iEnv (E , x ⦂ A)
-
-lookup : (x ⦂ RT ∈ Δ) → iEnv RE⟦ Δ ⟧ → R⟦ RT ⟧
-lookup found (γ , _ ⦂ a) = a
-lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
-
-eval : Δ ⊢ M ⦂ RT → iEnv RE⟦ Δ ⟧ → R⟦ RT ⟧
-eval (nat{n = n}) γ = n
-eval (var x∈) γ = lookup x∈ γ
-eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
-eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
-eval (pair ⊢M ⊢N) γ = (eval ⊢M γ) , (eval ⊢N γ)
-eval (pair-E1 ⊢M) γ = proj₁ (eval ⊢M γ)
-eval (pair-E2 ⊢M) γ = proj₂ (eval ⊢M γ)
-eval (sum-I1 ⊢M) γ = inj₁ (eval ⊢M γ)
-eval (sum-I2 ⊢N) γ = inj₂ (eval ⊢N γ)
-eval (sum-E ⊢L ⊢M ⊢N) γ =
-  [ (λ s → eval ⊢M (γ , _ ⦂ s)) , (λ t → eval ⊢N (γ , _ ⦂ t)) ] (eval ⊢L γ)
 
 
 corr-sp : Split Γ Γ₁ Γ₂ → Split ∥ Γ ∥⁺ ∥ Γ₁ ∥⁺ ∥ Γ₂ ∥⁺
@@ -429,18 +513,18 @@ corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
 corr (pair sp ÷M ÷N) =
   pair (weaken (corr-sp sp) (corr ÷M)) (weaken (split-sym (corr-sp sp)) (corr ÷N))
 corr (sum-E sp ÷L ÷M ÷N) =
-  sum-E (weaken (corr-sp sp) (corr  ÷L)) (weaken (lft (split-sym (corr-sp sp))) (corr ÷M)) (weaken (lft (split-sym (corr-sp sp))) (corr ÷N))
-corr (sum-E′ {S = S}{T = T}{U′ = U′}{U″ = U″}{U = U} sp ÷L ÷M ÷N U≡U′⊔U″) =
+  sum-E (weaken (corr-sp sp) (corr  ÷L))
+        (weaken (lft (split-sym (corr-sp sp))) (corr ÷M))
+        (weaken (lft (split-sym (corr-sp sp))) (corr ÷N))
+        (refl , refl)
+corr (sum-E′ {S = S}{T = T}{U′ = U′}{U″ = U″}{U = U}{ru′=ru″ = ru′=ru″} sp ÷L ÷M ÷N refl) =
   sum-E (weaken (corr-sp sp) (corr ÷L))
-        (weaken (lft (split-sym (corr-sp sp))) (corr {!÷M!}))
-        (weaken (lft (split-sym (corr-sp sp))) (corr {!!}))
-
-{-
-corr (`sub` ÷M T<S) = {!÷M!}
--}
+        (weaken (lft (split-sym (corr-sp sp))) (corr ÷M))
+        (weaken (lft (split-sym (corr-sp sp))) (corr ÷N))
+        (⊔-preserves U′ U″)
 
 -- pick one element of a type to demonstrate non-emptiness
-one : ∀ (T : Type) {net : ne T} → T⟦ T ⟧
+one : ∀ (T : Type) {ne-T : ne T} → T⟦ T ⟧
 one (Base P) {ne-base ∃P} = ∃P
 one Nat = zero
 one (T ⇒ T₁) {ne-⇒ ne-T ne-T₁} = λ x → one T₁ {ne-T₁}
@@ -602,4 +686,15 @@ lave (sum-E{S = S}{T = T}{U = U} sp ÷L ÷M ÷N) u
     ih-M)
 
 lave (sum-E′{S = S}{T = T}{U = U} sp ÷L ÷M ÷N uuu) u = {!!}
+-}
+
+-- unused stuff
+
+{- unused - needed?
+record _←_ (A B : Set) : Set where
+  field
+    func : A → B
+    back : ∀ (b : B) → ∃ λ (a : A) → func a ≡ b
+
+open _←_
 -}
