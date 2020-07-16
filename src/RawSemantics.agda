@@ -8,6 +8,8 @@ open import Data.String using (String)
 open import Data.Unit hiding (_≟_)
 open import Data.Empty
 
+open import Function using (_∘_)
+
 open import Relation.Nullary
 import Relation.Binary.PropositionalEquality as Eq
 open Eq using (_≡_;_≢_; refl)
@@ -91,9 +93,15 @@ data _⦂_∈_ {A : Set ℓ} : Id → A → Env A → Set ℓ where
       -- x ≢ y →
     x ⦂ a ∈ (E , y ⦂ a')
 
+
 data iEnv : Env Set → Set where
   · : iEnv ·
   _,_⦂_ : ∀ {E}{A} → iEnv E → (x : Id) → (a : A) → iEnv (E , x ⦂ A)
+
+data jEnv {A : Set ℓ} (⟦_⟧ : A → Set) : Env A → Set where
+  · : jEnv ⟦_⟧ ·
+  _,_⦂_ : ∀ {E}{A} → jEnv ⟦_⟧ E → (x : Id) → (a : ⟦ A ⟧) → jEnv ⟦_⟧ (E , x ⦂ A)
+
 
 -- should be in terms of RawType for evaluation
 
@@ -152,13 +160,18 @@ data _⊢_⦂_ : Env RawType → Expr → RawType → Set₁ where
     --------------------
     Δ ⊢ Case L x M y N ⦂ RW
 
-lookup : (x ⦂ RT ∈ Δ) → iEnv RE⟦ Δ ⟧ → R⟦ RT ⟧
+glookup : ∀ {A : Set ℓ} {⟦_⟧ : A → Set}{Φ : Env A}{a : A} →
+  (x ⦂ a ∈ Φ) → jEnv ⟦_⟧ Φ → ⟦ a ⟧
+glookup found (γ , _ ⦂ a) = a
+glookup (there x∈) (γ , _ ⦂ a) = glookup x∈ γ
+{-
+lookup : (x ⦂ RT ∈ Δ) → jEnv R⟦_⟧ Δ → R⟦ RT ⟧
 lookup found (γ , _ ⦂ a) = a
 lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
-
-eval : Δ ⊢ M ⦂ RT → iEnv RE⟦ Δ ⟧ → R⟦ RT ⟧
+-}
+eval : Δ ⊢ M ⦂ RT → jEnv R⟦_⟧ Δ → R⟦ RT ⟧
 eval (nat{n = n}) γ = n
-eval (var x∈) γ = lookup x∈ γ
+eval (var x∈) γ = glookup x∈ γ
 eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
 eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
 eval (pair ⊢M ⊢N) γ = (eval ⊢M γ) , (eval ⊢N γ)
@@ -173,7 +186,7 @@ eval (sum-E ⊢L ⊢M ⊢N (refl , refl)) γ =
 -- refinement types that drive the incorrectness typing
 
 data Type : Set₁ where
-  Base : (P : ℕ → Set) → Type -- refinement
+  Base : (P : ℕ → Set) (p : ∀ n → Dec (P n)) → Type -- refinement
   Nat : Type
   _⇒_ _⋆_ _⊹_ : (S : Type) (T : Type) → Type
 
@@ -182,7 +195,7 @@ T-Nat = Base (λ n → ⊤) -- all natural numbers
 -- characterize non-empty types
 
 data ne : Type → Set where
-  ne-base : ∀ {P} → (∃P : Σ ℕ P) → ne (Base P)
+  ne-base : ∀ {P p} → (∃P : Σ ℕ P) → ne (Base P p)
   ne-nat : ne Nat
   ne-⇒ : ∀ {S T} → ne S → ne T → ne (S ⇒ T)
   ne-⋆ : ∀ {S T} → ne S → ne T → ne (S ⋆ T)
@@ -190,14 +203,14 @@ data ne : Type → Set where
   ne-⊹R : ∀ {S T} → ne T → ne (S ⊹ T)
 
 ∥_∥ : Type → RawType
-∥ Base P ∥ = Nat
+∥ Base P p ∥ = Nat
 ∥ Nat ∥ = Nat
 ∥ S ⇒ S₁ ∥ = ∥ S ∥ ⇒ ∥ S₁ ∥
 ∥ S ⋆ S₁ ∥ = ∥ S ∥ ⋆ ∥ S₁ ∥
 ∥ S ⊹ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
 
 T⟦_⟧ : Type → Set
-T⟦ Base P ⟧ = Σ ℕ P
+T⟦ Base P p ⟧ = Σ ℕ P
 T⟦ Nat ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
 T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
@@ -212,7 +225,7 @@ E⟦_⟧ = T⟦_⟧ ⁺
 -- a value is a member of refinement type T
 
 _∋_ : (T : Type) → R⟦ ∥ T ∥ ⟧ → Set
-Base P ∋ x = P x
+Base P p ∋ x = P x
 Nat ∋ x = ⊤
 (T ⇒ T₁) ∋ f = ∀ x → T ∋ x → T₁ ∋ f x
 (T ⋆ T₁) ∋ (fst , snd) = T ∋ fst × T₁ ∋ snd
@@ -232,11 +245,25 @@ implies n Pn = inj₁ Pn
 p*q->p : ∀ {P Q : ℕ → Set} → (n : ℕ) → (P n × Q n) → P n
 p*q->p n (Pn , Qn) = Pn
 
+dec-P∨Q : ∀ {P Q : ℕ → Set} → (p : ∀ n → Dec (P n)) (q : ∀ n → Dec (Q n)) → (∀ n → Dec ((P ∨ Q) n))
+dec-P∨Q p q n with p n | q n
+... | no ¬p | no ¬q = no [ ¬p , ¬q ]
+... | no ¬p | yes !q = yes (inj₂ !q)
+... | yes !p | no ¬q = yes (inj₁ !p)
+... | yes !p | yes !q = yes (inj₁ !p)
+
+dec-P∧Q : ∀ {P Q : ℕ → Set} → (p : ∀ n → Dec (P n)) (q : ∀ n → Dec (Q n)) → (∀ n → Dec ((P ∧ Q) n))
+dec-P∧Q p q n with p n | q n
+... | no ¬p | no ¬q = no (¬p ∘ proj₁)
+... | no ¬p | yes !q = no (¬p ∘ proj₁)
+... | yes !p | no ¬q = no (¬q ∘ proj₂)
+... | yes !p | yes !q = yes (!p , !q)
+
 _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 
-(Base P ⊔ Base P₁) {refl} = Base (P ∨ P₁)
-(Base P ⊔ Nat) = Nat
-(Nat ⊔ Base P) = Nat
+(Base P p ⊔ Base P₁ p₁) {refl} = Base (P ∨ P₁) (dec-P∨Q p p₁)
+(Base P p ⊔ Nat) = Nat
+(Nat ⊔ Base P p) = Nat
 (Nat ⊔ Nat) = Nat
 ((S ⇒ S₁) ⊔ (T ⇒ T₁)) {r} with ss⇒tt r
 ... | sss , ttt = (S ⊓ T){sss} ⇒ (S₁ ⊔ T₁){ttt}
@@ -245,9 +272,9 @@ _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 ((S ⊹ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
 ... | sss , ttt = (S ⊔ T){sss} ⊹ (S₁ ⊔ T₁){ttt}
 
-Base P ⊓ Base P₁ = Base (P ∧ P₁)
-Base P ⊓ Nat = Base P
-Nat ⊓ Base P = Base P
+Base P p ⊓ Base P₁ p₁ = Base (P ∧ P₁) (dec-P∧Q p p₁)
+Base P p ⊓ Nat = Base P p
+Nat ⊓ Base P p = Base P p
 Nat ⊓ Nat = Nat
 ((S ⇒ S₁) ⊓ (T ⇒ T₁)){r} with ss⇒tt r
 ... | sss , ttt = (S ⊔ T){sss} ⇒ (S₁ ⊓ T₁){ttt}
@@ -267,9 +294,9 @@ variable
 ⊔-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} → ∥ (S ⊔ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊔ T){st} ∥ ≡ ∥ T ∥
 ⊓-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} → ∥ (S ⊓ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊓ T){st} ∥ ≡ ∥ T ∥
 
-⊔-preserves (Base P) (Base P₁) {refl} = refl , refl
-⊔-preserves (Base P) Nat {st} = refl , refl
-⊔-preserves Nat (Base P) {st} = refl , refl
+⊔-preserves (Base P p) (Base P₁ p₁) {refl} = refl , refl
+⊔-preserves (Base P p) Nat {st} = refl , refl
+⊔-preserves Nat (Base P p) {st} = refl , refl
 ⊔-preserves Nat Nat {st} = refl , refl
 ⊔-preserves (S ⇒ S₁) (T ⇒ T₁) {st} with ss⇒tt st
 ... | sss , ttt with ⊓-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
@@ -281,9 +308,9 @@ variable
 ... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
 ... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
 
-⊓-preserves (Base P) (Base P₁) {st} = refl , refl
-⊓-preserves (Base P) Nat {st} = refl , refl
-⊓-preserves Nat (Base P) {st} = refl , refl
+⊓-preserves (Base P p) (Base P₁ p₂) {st} = refl , refl
+⊓-preserves (Base P p) Nat {st} = refl , refl
+⊓-preserves Nat (Base P p) {st} = refl , refl
 ⊓-preserves Nat Nat {st} = refl , refl
 ⊓-preserves (S ⇒ S₁) (T ⇒ T₁) {st} with ss⇒tt st
 ... | sss , ttt with ⊔-preserves S T {sss} | ⊓-preserves S₁ T₁ {ttt}
@@ -310,11 +337,13 @@ data _<:_ : Type → Type → Set where
 
   <:-base : 
     (P Q : ℕ → Set) →
+    {p : ∀ n → Dec (P n)} 
+    {q : ∀ n → Dec (Q n)}
     (p→q : ∀ n → P n → Q n) →
-    Base P <: Base Q
+    Base P p <: Base Q q
 
-  <:-base-nat :
-    Base P <: Nat
+  <:-base-nat : ∀ {p : ∀ n → Dec (P n)} →
+    Base P p <: Nat
     
   <:-⇒ :
     S′ <: S →
@@ -344,9 +373,9 @@ data _<:_ : Type → Type → Set where
 <:-⊔ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → S <: (S ⊔ T){c}
 <:-⊓ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → (S ⊓ T){c} <: S
 
-<:-⊔ (Base P) (Base P₁) {refl} = <:-base P (P ∨ P₁) implies
-<:-⊔ (Base P) Nat = <:-base-nat
-<:-⊔ Nat (Base P) = <:-refl
+<:-⊔ (Base P p) (Base P₁ p₁) {refl} = <:-base P (P ∨ P₁) implies
+<:-⊔ (Base P p) Nat = <:-base-nat
+<:-⊔ Nat (Base P p) = <:-refl
 <:-⊔ Nat Nat = <:-refl
 <:-⊔ (S ⇒ S₁) (T ⇒ T₁) {c} with ss⇒tt c
 ... | c1 , c2 = <:-⇒ (<:-⊓ S T) (<:-⊔ S₁ T₁)
@@ -355,9 +384,9 @@ data _<:_ : Type → Type → Set where
 <:-⊔ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
 ... | c1 , c2 = <:-⊹ (<:-⊔ S T) (<:-⊔ S₁ T₁)
 
-<:-⊓ (Base P) (Base P₁) {refl} = <:-base (P ∧ P₁) P p*q->p
-<:-⊓ (Base P) Nat = <:-refl
-<:-⊓ Nat (Base P) = <:-base-nat
+<:-⊓ (Base P p) (Base P₁ p₁) {refl} = <:-base (P ∧ P₁) P p*q->p
+<:-⊓ (Base P p) Nat = <:-refl
+<:-⊓ Nat (Base P p) = <:-base-nat
 <:-⊓ Nat Nat = <:-refl
 <:-⊓ (S ⇒ S₁) (T ⇒ T₁) {c} with ss⇒tt c
 ... | c1 , c2 = <:-⇒ (<:-⊔ S T) (<:-⊓ S₁ T₁)
@@ -399,18 +428,21 @@ weaken sp (sum-E ⊢L ⊢M ⊢N (RT=RU , RT=RV)) =
 toRaw : ∀ T → T⟦ T ⟧ → Maybe R⟦ ∥ T ∥ ⟧
 fromRaw : ∀ T → R⟦ ∥ T ∥ ⟧ → Maybe T⟦ T ⟧
 
-toRaw (Base P) (n , Pn) = just n
+toRaw (Base P p) (n , Pn) = just n
 toRaw Nat n = just n
 toRaw (T ⇒ T₁) t = {!!}
 toRaw (T ⋆ T₁) (t , t₁) = toRaw T t >>= (λ r → toRaw T₁ t₁ >>= (λ r₁ → just (r , r₁)))
 toRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (toRaw T x)
 toRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (toRaw T₁ y)
 
-fromRaw (Base P) r = {!!}       -- need a Decidable P here
+fromRaw (Base P p) r with p r
+... | no ¬p = nothing
+... | yes pr = just (r , pr)
 fromRaw Nat r = just r
 fromRaw (T ⇒ T₁) r = {!!}
-fromRaw (T ⋆ T₁) r = {!!}
-fromRaw (T ⊹ T₁) r = {!!}
+fromRaw (T ⋆ T₁) (r , r₁) = fromRaw T r >>= (λ t → fromRaw T₁ r₁ >>= (λ t₁ → just (t , t₁)))
+fromRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (fromRaw T x)
+fromRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (fromRaw T₁ y)
 
 module rule-by-rule where
 
@@ -419,7 +451,7 @@ module rule-by-rule where
    where
     nat' :
       --------------------
-      · ⊢ Nat n ÷ Base (_≡_ n)
+      · ⊢ Nat n ÷ Base (_≡_ n) (_≟_ n)
 
   corr : Γ ⊢ M ÷ T → ∥ Γ ∥⁺ ⊢ M ⦂ ∥ T ∥
   corr nat' = nat
@@ -427,8 +459,8 @@ module rule-by-rule where
   lave :
     (÷M : Γ ⊢ M ÷ T) →
     ∀ (t : T⟦ T ⟧) →
-    ∃ λ (γ : iEnv E⟦ Γ ⟧) →
-    eval (corr ÷M) {!!} ≡ {!!}
+    ∃ λ (γ : jEnv R⟦_⟧ ∥ Γ ∥⁺) →
+    eval (corr ÷M) γ ≡ {!toRaw!}
   lave = {!!}
 
 
@@ -436,7 +468,7 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
   nat' :
     --------------------
-    · ⊢ Nat n ÷ Base (_≡_ n)
+    · ⊢ Nat n ÷ Base (_≡_ n) {!!}
 
   var1 :
     ( · , x ⦂ T) ⊢ Var x ÷ T
@@ -525,7 +557,7 @@ corr (sum-E′ {S = S}{T = T}{U′ = U′}{U″ = U″}{U = U}{ru′=ru″ = ru�
 
 -- pick one element of a type to demonstrate non-emptiness
 one : ∀ (T : Type) {ne-T : ne T} → T⟦ T ⟧
-one (Base P) {ne-base ∃P} = ∃P
+one (Base P p) {ne-base ∃P} = ∃P
 one Nat = zero
 one (T ⇒ T₁) {ne-⇒ ne-T ne-T₁} = λ x → one T₁ {ne-T₁}
 one (T ⋆ T₁) {ne-⋆ ne-T ne-T₁} = (one T {ne-T}) , (one T₁ {ne-T₁})
