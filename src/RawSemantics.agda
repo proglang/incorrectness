@@ -190,7 +190,8 @@ data Type : Set₁ where
   Nat : Type
   _⇒_ _⋆_ _⊹_ : (S : Type) (T : Type) → Type
 
-T-Nat = Base (λ n → ⊤) -- all natural numbers
+T-Nat : Type
+T-Nat = Base (λ n → ⊤) (λ n → yes tt) -- all natural numbers
 
 -- characterize non-empty types
 
@@ -287,6 +288,7 @@ variable
   S T U S′ T′ U′ U″ : Type
   Γ Γ₁ Γ₂ : Env Type
   P : ℕ → Set
+  p : ∀ n → Dec (P n)
   A : Set ℓ
   a : A
   Φ Φ₁ Φ₂ : Env A
@@ -422,29 +424,66 @@ weaken sp (sum-E ⊢L ⊢M ⊢N (RT=RU , RT=RV)) =
 
 -- incorrectness typing
 
+-- a positive type contains refinements only in positive positions
+
+mutual
+  data Pos : Type → Set where
+    Pos-Base : Pos (Base P p)
+    Pos-Nat : Pos Nat
+    Pos-⇒ : Neg S → Pos T → Pos (S ⇒ T)
+    Pos-⋆ : Pos S → Pos T → Pos (S ⋆ T)
+    Pos-⊹ : Pos S → Pos T → Pos (S ⊹ T)
+
+  data Neg : Type → Set where
+    Neg-Nat : Neg Nat
+    Neg-⇒ : Pos S → Neg T → Neg (S ⇒ T)
+    Neg-⋆ : Neg S → Neg T → Neg (S ⋆ T)
+    Neg-⊹ : Neg S → Neg T → Neg (S ⊹ T)
+
+module positive-restricted where
+  toRaw : ∀ T → Pos T → T⟦ T ⟧ → R⟦ ∥ T ∥ ⟧
+  fromRaw : ∀ T → Neg T → R⟦ ∥ T ∥ ⟧ → T⟦ T ⟧
+
+  toRaw (Base P p) Pos-Base (n , pn) = n
+  toRaw Nat Pos-Nat t = t
+  toRaw (T ⇒ T₁) (Pos-⇒ neg pos₁) t = toRaw T₁ pos₁ ∘ t ∘ fromRaw T neg
+  toRaw (T ⋆ T₁) (Pos-⋆ pos pos₁) (t , t₁) = toRaw T pos t , (toRaw T₁ pos₁ t₁)
+  toRaw (T ⊹ T₁) (Pos-⊹ pos pos₁) (inj₁ x) = inj₁ (toRaw T pos x)
+  toRaw (T ⊹ T₁) (Pos-⊹ pos pos₁) (inj₂ y) = inj₂ (toRaw T₁ pos₁ y)
+
+  fromRaw (Base P p) () r
+  fromRaw Nat Neg-Nat r = r
+  fromRaw (T ⇒ T₁) (Neg-⇒ pos neg) r = fromRaw T₁ neg ∘ r ∘ toRaw T pos
+  fromRaw (T ⋆ T₁) (Neg-⋆ neg neg₁) (r , r₁) = fromRaw T neg r , fromRaw T₁ neg₁ r₁
+  fromRaw (T ⊹ T₁) (Neg-⊹ neg neg₁) (inj₁ x) = inj₁ (fromRaw T neg x)
+  fromRaw (T ⊹ T₁) (Neg-⊹ neg neg₁) (inj₂ y) = inj₂ (fromRaw T₁ neg₁ y)
+  
 -- attempt to map type (interpretation) to corresponding raw type (interpretation)
 -- * must be monadic because of refinement
 -- * fails at function types
-toRaw : ∀ T → T⟦ T ⟧ → Maybe R⟦ ∥ T ∥ ⟧
-fromRaw : ∀ T → R⟦ ∥ T ∥ ⟧ → Maybe T⟦ T ⟧
+module monadic where
+  toRaw : ∀ T → T⟦ T ⟧ → Maybe R⟦ ∥ T ∥ ⟧
+  fromRaw : ∀ T → R⟦ ∥ T ∥ ⟧ → Maybe T⟦ T ⟧
 
-toRaw (Base P p) (n , Pn) = just n
-toRaw Nat n = just n
-toRaw (T ⇒ T₁) t = {!!}
-toRaw (T ⋆ T₁) (t , t₁) = toRaw T t >>= (λ r → toRaw T₁ t₁ >>= (λ r₁ → just (r , r₁)))
-toRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (toRaw T x)
-toRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (toRaw T₁ y)
+  toRaw (Base P p) (n , Pn) = just n
+  toRaw Nat n = just n
+  toRaw (T ⇒ T₁) t = {!!}
+  toRaw (T ⋆ T₁) (t , t₁) = toRaw T t >>= (λ r → toRaw T₁ t₁ >>= (λ r₁ → just (r , r₁)))
+  toRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (toRaw T x)
+  toRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (toRaw T₁ y)
 
-fromRaw (Base P p) r with p r
-... | no ¬p = nothing
-... | yes pr = just (r , pr)
-fromRaw Nat r = just r
-fromRaw (T ⇒ T₁) r = {!!}
-fromRaw (T ⋆ T₁) (r , r₁) = fromRaw T r >>= (λ t → fromRaw T₁ r₁ >>= (λ t₁ → just (t , t₁)))
-fromRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (fromRaw T x)
-fromRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (fromRaw T₁ y)
+  fromRaw (Base P p) r with p r
+  ... | no ¬p = nothing
+  ... | yes pr = just (r , pr)
+  fromRaw Nat r = just r
+  fromRaw (T ⇒ T₁) r = {!!}
+  fromRaw (T ⋆ T₁) (r , r₁) = fromRaw T r >>= (λ t → fromRaw T₁ r₁ >>= (λ t₁ → just (t , t₁)))
+  fromRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (fromRaw T x)
+  fromRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (fromRaw T₁ y)
 
 module rule-by-rule where
+
+  open positive-restricted
 
   data
     _⊢_÷_ : Env Type → Expr → Type → Set₁ 
@@ -453,16 +492,21 @@ module rule-by-rule where
       --------------------
       · ⊢ Nat n ÷ Base (_≡_ n) (_≟_ n)
 
+    var' :
+      ( · , x ⦂ T) ⊢ Var x ÷ T
+
   corr : Γ ⊢ M ÷ T → ∥ Γ ∥⁺ ⊢ M ⦂ ∥ T ∥
   corr nat' = nat
+  corr var' = var found
 
   lave :
     (÷M : Γ ⊢ M ÷ T) →
+    (pos : Pos T) → 
     ∀ (t : T⟦ T ⟧) →
     ∃ λ (γ : jEnv R⟦_⟧ ∥ Γ ∥⁺) →
-    eval (corr ÷M) γ ≡ {!toRaw!}
-  lave = {!!}
-
+    eval (corr ÷M) γ ≡ toRaw T pos t
+  lave nat' Pos-Base (n , pn) = · , pn
+  lave var' pos t = (· , _ ⦂ toRaw _ pos t) , refl
 
 data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
