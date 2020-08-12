@@ -188,7 +188,8 @@ eval (sum-E ⊢L ⊢M ⊢N (refl , refl)) γ =
 data Type : Set₁ where
   Base : (P : ℕ → Set) (p : ∀ n → Dec (P n)) → Type -- refinement
   Nat : Type
-  _⇒_ _⋆_ _⊹_ : (S : Type) (T : Type) → Type
+  _⇒_ _⋆_ : (S : Type) (T : Type) → Type
+  _⊹_ _⊹ˡ_ _⊹ʳ_ : (S : Type) (T : Type) → Type
 
 T-Nat : Type
 T-Nat = Base (λ n → ⊤) (λ n → yes tt) -- all natural numbers
@@ -209,6 +210,8 @@ data ne : Type → Set where
 ∥ S ⇒ S₁ ∥ = ∥ S ∥ ⇒ ∥ S₁ ∥
 ∥ S ⋆ S₁ ∥ = ∥ S ∥ ⋆ ∥ S₁ ∥
 ∥ S ⊹ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
+∥ S ⊹ˡ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
+∥ S ⊹ʳ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
 
 T⟦_⟧ : Type → Set
 T⟦ Base P p ⟧ = Σ ℕ P
@@ -216,6 +219,8 @@ T⟦ Nat ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
 T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
+T⟦ S ⊹ˡ T ⟧ = T⟦ S ⟧
+T⟦ S ⊹ʳ T ⟧ = T⟦ T ⟧
 
 E⟦_⟧ : Env Type → Env Set
 E⟦_⟧ = T⟦_⟧ ⁺
@@ -232,6 +237,10 @@ Nat ∋ x = ⊤
 (T ⋆ T₁) ∋ (fst , snd) = T ∋ fst × T₁ ∋ snd
 (T ⊹ T₁) ∋ inj₁ x = T ∋ x
 (T ⊹ T₁) ∋ inj₂ y = T₁ ∋ y
+(S ⊹ˡ T) ∋ inj₁ x = S ∋ x
+(S ⊹ˡ T) ∋ inj₂ y = ⊥
+(S ⊹ʳ T) ∋ inj₁ x = ⊥
+(S ⊹ʳ T) ∋ inj₂ y = T ∋ y
 
 -- operations on predicates 
 _∨_ : (P Q : ℕ → Set) → ℕ → Set
@@ -272,6 +281,20 @@ _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 ... | sss , ttt = (S ⊔ T){sss} ⋆ (S₁ ⊔ T₁){ttt}
 ((S ⊹ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
 ... | sss , ttt = (S ⊔ T){sss} ⊹ (S₁ ⊔ T₁){ttt}
+((S ⊹ S₁) ⊔ (T ⊹ˡ T₁)) {r} with ss⊹tt r
+... | sss , ttt = (S ⊔ T){sss} ⊹ S₁
+((S ⊹ S₁) ⊔ (T ⊹ʳ T₁)) {r} with ss⊹tt r
+... | sss , ttt = S ⊹ (S₁ ⊔ T₁){ttt}
+((S ⊹ˡ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
+... | sss , ttt = ((S ⊔ T){sss}) ⊹ (S₁ ⊔ T₁){ttt}
+((S ⊹ˡ S₁) ⊔ (T ⊹ˡ T₁)) {r} with ss⊹tt r
+... | sss , ttt = ((S ⊔ T){sss}) ⊹ˡ ((S₁ ⊔ T₁){ttt})
+((S ⊹ˡ S₁) ⊔ (T ⊹ʳ T₁)) {r} = S ⊹ T₁
+((S ⊹ʳ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
+... | sss , ttt = T ⊹ ((S₁ ⊔ T₁) {ttt})
+((S ⊹ʳ S₁) ⊔ (T ⊹ˡ T₁)) {r} = T ⊹ S₁
+((S ⊹ʳ S₁) ⊔ (T ⊹ʳ T₁)) {r} with ss⊹tt r
+... | sss , ttt = (S ⊔ T) {sss} ⊹ (S₁ ⊔ T₁) {ttt}
 
 Base P p ⊓ Base P₁ p₁ = Base (P ∧ P₁) (dec-P∧Q p p₁)
 Base P p ⊓ Nat = Base P p
@@ -283,6 +306,14 @@ Nat ⊓ Nat = Nat
 ... | sss , ttt = (S ⊓ T){sss} ⋆ (S₁ ⊓ T₁){ttt}
 ((S ⊹ S₁) ⊓ (T ⊹ T₁)){r} with ss⊹tt r
 ... | sss , ttt = (S ⊓ T){sss} ⊹ (S₁ ⊓ T₁){ttt}
+((S ⊹ˡ S₁) ⊓ (T ⊹ T₁)) {r} = {!!}
+((S ⊹ʳ S₁) ⊓ (T ⊹ T₁)) {r} = {!!}
+((S ⊹ S₁) ⊓ (T ⊹ˡ T₁)) {r} = {!!}
+((S ⊹ˡ S₁) ⊓ (T ⊹ˡ T₁)) {r} = {!!}
+((S ⊹ʳ S₁) ⊓ (T ⊹ˡ T₁)) {r} = {!!}
+((S ⊹ S₁) ⊓ (T ⊹ʳ T₁)) {r} = {!!}
+((S ⊹ˡ S₁) ⊓ (T ⊹ʳ T₁)) {r} = {!!}
+((S ⊹ʳ S₁) ⊓ (T ⊹ʳ T₁)) {r} = {!!}
 
 variable
   S T U S′ T′ U′ U″ : Type
@@ -293,8 +324,10 @@ variable
   a : A
   Φ Φ₁ Φ₂ : Env A
 
-⊔-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} → ∥ (S ⊔ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊔ T){st} ∥ ≡ ∥ T ∥
-⊓-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} → ∥ (S ⊓ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊓ T){st} ∥ ≡ ∥ T ∥
+⊔-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} →
+  ∥ (S ⊔ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊔ T){st} ∥ ≡ ∥ T ∥
+⊓-preserves : ∀ S T {st : ∥ S ∥ ≡ ∥ T ∥} →
+  ∥ (S ⊓ T){st} ∥ ≡ ∥ S ∥ × ∥ (S ⊓ T){st} ∥ ≡ ∥ T ∥
 
 ⊔-preserves (Base P p) (Base P₁ p₁) {refl} = refl , refl
 ⊔-preserves (Base P p) Nat {st} = refl , refl
@@ -307,6 +340,28 @@ variable
 ... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
 ... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
 ⊔-preserves (S ⊹ S₁) (T ⊹ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+⊔-preserves (S ⊹ S₁) (T ⊹ˡ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s = refl , st
+⊔-preserves (S ⊹ S₁) (T ⊹ʳ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+⊔-preserves (S ⊹ˡ S₁) (T ⊹ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+⊔-preserves (S ⊹ˡ S₁) (T ⊹ˡ T₁) {st} with ss⊹tt st
+... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
+⊔-preserves (S ⊹ˡ S₁) (T ⊹ʳ T₁) {st} with ss⊹tt st
+... | sss , ttt rewrite sss | ttt = refl , refl
+⊔-preserves (S ⊹ʳ S₁) (T ⊹ T₁) {st} with ss⊹tt st
+... | sss , ttt rewrite sss with ⊔-preserves S₁ T₁ {ttt}
+... | sut=s , sut=t rewrite sut=t = (Eq.sym st) , refl
+⊔-preserves (S ⊹ʳ S₁) (T ⊹ˡ T₁) {st} with ss⊹tt st
+... | sss , ttt rewrite sss = refl , st
+⊔-preserves (S ⊹ʳ S₁) (T ⊹ʳ T₁) {st} with ss⊹tt st
 ... | sss , ttt with ⊔-preserves S T {sss} | ⊔-preserves S₁ T₁ {ttt}
 ... | sut=s , sut=t | sut=s₁ , sut=t₁ rewrite sut=s | sut=s₁ = refl , st
 
@@ -323,6 +378,10 @@ variable
 ⊓-preserves (S ⊹ S₁) (T ⊹ T₁) {st} with ss⊹tt st
 ... | sss , ttt with ⊓-preserves S T {sss} | ⊓-preserves S₁ T₁ {ttt}
 ... | sut=s , sut=t | sut=s1 , sut=t1 rewrite sut=s | sut=s1 = refl , st
+⊓-preserves (S ⊹ˡ S₁) (T ⊹ T₁) {st} = {!!}
+⊓-preserves (S ⊹ʳ S₁) (T ⊹ T₁) {st} = {!!}
+⊓-preserves S (T ⊹ˡ T₁) {st} = {!!}
+⊓-preserves S (T ⊹ʳ T₁) {st} = {!!}
 
 
 data Split {A : Set ℓ} : Env A → Env A → Env A → Set ℓ where
@@ -362,6 +421,14 @@ data _<:_ : Type → Type → Set where
     T <: T′ →
     (S ⊹ T) <: (S′ ⊹ T′)
 
+  <:-⊹ˡ-⊹ :
+    S <: S′ →
+    (S ⊹ˡ T) <: (S′ ⊹ T)
+
+  <:-⊹ʳ-⊹ :
+    T <: T′ →
+    (S ⊹ʳ T) <: (S ⊹ T′)
+
 -- subtyping is compatible with raw types
 
 <:-raw : S <: T → ∥ S ∥ ≡ ∥ T ∥
@@ -371,6 +438,8 @@ data _<:_ : Type → Type → Set where
 <:-raw (<:-⇒ s<:t s<:t₁) = Eq.cong₂ _⇒_ (Eq.sym (<:-raw s<:t)) (<:-raw s<:t₁)
 <:-raw (<:-⋆ s<:t s<:t₁) = Eq.cong₂ _⋆_ (<:-raw s<:t) (<:-raw s<:t₁)
 <:-raw (<:-⊹ s<:t s<:t₁) = Eq.cong₂ _⊹_ (<:-raw s<:t) (<:-raw s<:t₁)
+<:-raw (<:-⊹ˡ-⊹ s<:t) = Eq.cong₂ _⊹_ (<:-raw s<:t) refl
+<:-raw (<:-⊹ʳ-⊹ s<:t) = Eq.cong₂ _⊹_ refl (<:-raw s<:t)
 
 <:-⊔ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → S <: (S ⊔ T){c}
 <:-⊓ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → (S ⊓ T){c} <: S
@@ -385,6 +454,16 @@ data _<:_ : Type → Type → Set where
 ... | c1 , c2 = <:-⋆ (<:-⊔ S T) (<:-⊔ S₁ T₁)
 <:-⊔ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
 ... | c1 , c2 = <:-⊹ (<:-⊔ S T) (<:-⊔ S₁ T₁)
+<:-⊔ (S ⊹ S₁) (T ⊹ˡ T₁) {c} with ss⊹tt c
+... | c1 , c2 = <:-⊹ (<:-⊔ S T) <:-refl
+<:-⊔ (S ⊹ S₁) (T ⊹ʳ T₁) {c} with ss⊹tt c
+... | c1 , c2 = <:-⊹ <:-refl (<:-⊔ S₁ T₁)
+<:-⊔ (S ⊹ˡ S₁) (T ⊹ T₁) {c} with ss⊹tt c
+... | c12 = {!<:-⊹!}
+<:-⊔ (S ⊹ˡ S₁) (T ⊹ˡ T₁) = {!!}
+<:-⊔ (S ⊹ˡ S₁) (T ⊹ʳ T₁) = {!!}
+<:-⊔ (S ⊹ʳ S₁) T = {!!}
+
 
 <:-⊓ (Base P p) (Base P₁ p₁) {refl} = <:-base (P ∧ P₁) P p*q->p
 <:-⊓ (Base P p) Nat = <:-refl
@@ -396,12 +475,22 @@ data _<:_ : Type → Type → Set where
 ... | c1 , c2 = <:-⋆ (<:-⊓ S T) (<:-⊓ S₁ T₁)
 <:-⊓ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
 ... | c1 , c2 = <:-⊹ (<:-⊓ S T) (<:-⊓ S₁ T₁)
+<:-⊓ (S ⊹ S₁) (T ⊹ˡ T₁) = {!!}
+<:-⊓ (S ⊹ S₁) (T ⊹ʳ T₁) = {!!}
+<:-⊓ (S ⊹ˡ S₁) T = {!!}
+<:-⊓ (S ⊹ʳ S₁) T = {!!}
 
 
 split-sym : Split Φ Φ₁ Φ₂ → Split Φ Φ₂ Φ₁
 split-sym nil = nil
 split-sym (lft sp) = rgt (split-sym sp)
 split-sym (rgt sp) = lft (split-sym sp)
+
+split-map : ∀ {A : Set ℓ}{B : Set ℓ′}{Φ Φ₁ Φ₂ : Env A} →
+  {f : A → B} → Split Φ Φ₁ Φ₂ → Split ((f ⁺) Φ) ((f ⁺) Φ₁) ((f ⁺) Φ₂)
+split-map nil = nil
+split-map (lft sp) = lft (split-map sp)
+split-map (rgt sp) = rgt (split-map sp)
 
 weaken-∈ : Split Φ Φ₁ Φ₂ → x ⦂ a ∈ Φ₁ → x ⦂ a ∈ Φ
 weaken-∈ (lft sp) found = found
@@ -458,6 +547,7 @@ module positive-restricted where
   fromRaw (T ⊹ T₁) (Neg-⊹ neg neg₁) (inj₁ x) = inj₁ (fromRaw T neg x)
   fromRaw (T ⊹ T₁) (Neg-⊹ neg neg₁) (inj₂ y) = inj₂ (fromRaw T₁ neg₁ y)
   
+{-
 -- attempt to map type (interpretation) to corresponding raw type (interpretation)
 -- * must be monadic because of refinement
 -- * fails at function types
@@ -480,14 +570,69 @@ module monadic where
   fromRaw (T ⋆ T₁) (r , r₁) = fromRaw T r >>= (λ t → fromRaw T₁ r₁ >>= (λ t₁ → just (t , t₁)))
   fromRaw (T ⊹ T₁) (inj₁ x) = Data.Maybe.map inj₁ (fromRaw T x)
   fromRaw (T ⊹ T₁) (inj₂ y) = Data.Maybe.map inj₂ (fromRaw T₁ y)
+-}
+
+corr-sp : Split Γ Γ₁ Γ₂ → Split ∥ Γ ∥⁺ ∥ Γ₁ ∥⁺ ∥ Γ₂ ∥⁺
+corr-sp nil = nil
+corr-sp (lft sp) = lft (corr-sp sp)
+corr-sp (rgt sp) = rgt (corr-sp sp)
+
+postulate
+  ext : ∀ {A B : Set}{f g : A → B} → (∀ x → f x ≡ g x) → f ≡ g
+
+unsplit-env :  ∀ {A : Set ℓ} {⟦_⟧ : A → Set}{Φ Φ₁ Φ₂ : Env A}→
+  Split Φ Φ₁ Φ₂ → jEnv ⟦_⟧ Φ₁ → jEnv ⟦_⟧ Φ₂ → jEnv ⟦_⟧ Φ
+unsplit-env nil γ₁ γ₂ = ·
+unsplit-env (lft sp) (γ₁ , _ ⦂ a) γ₂ = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
+unsplit-env (rgt sp) γ₁ (γ₂ , _ ⦂ a) = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
+
+unsplit-split :  ∀ {A : Set ℓ} {⟦_⟧ : A → Set}{Φ Φ₁ Φ₂ : Env A} →
+  (sp : Split Φ Φ₁ Φ₂) (γ₁ : jEnv ⟦_⟧ Φ₁) (γ₂ : jEnv ⟦_⟧ Φ₂) →
+  unsplit-env sp γ₁ γ₂ ≡ unsplit-env (split-sym sp) γ₂ γ₁
+unsplit-split nil γ₁ γ₂ = refl
+unsplit-split (lft sp) (γ₁ , _ ⦂ a) γ₂ rewrite unsplit-split sp γ₁ γ₂ = refl
+unsplit-split (rgt sp) γ₁ (γ₂ , _ ⦂ a) rewrite unsplit-split sp γ₁ γ₂ = refl
+
+lookup-unsplit :  ∀ {A : Set ℓ} {⟦_⟧ : A → Set}{Φ Φ₁ Φ₂ : Env A}{a : A} →
+  (sp : Split Φ Φ₁ Φ₂) (γ₁ : jEnv ⟦_⟧ Φ₁) (γ₂ : jEnv ⟦_⟧ Φ₂) →
+  (x∈ : x ⦂ a ∈ Φ₁) →
+  glookup (weaken-∈ sp x∈) (unsplit-env sp γ₁ γ₂) ≡ glookup x∈ γ₁
+lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ found = refl
+lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) found = lookup-unsplit sp γ₁ γ₂ found
+lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ (there x∈) = lookup-unsplit sp γ₁ γ₂ x∈
+lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) (there x∈) = lookup-unsplit sp γ₁ γ₂ (there x∈)
+
+eval-unsplit : (sp : Split Δ Δ₁ Δ₂) (γ₁ : jEnv R⟦_⟧ Δ₁) (γ₂ : jEnv R⟦_⟧ Δ₂) →
+  (⊢M : Δ₁ ⊢ M ⦂ RT) →
+  eval (weaken sp ⊢M) (unsplit-env sp γ₁ γ₂) ≡ eval ⊢M γ₁
+eval-unsplit sp γ₁ γ₂ (nat)= refl
+eval-unsplit sp γ₁ γ₂ (var x∈) = lookup-unsplit sp γ₁ γ₂ x∈
+eval-unsplit sp γ₁ γ₂ (lam ⊢M) = ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
+eval-unsplit sp γ₁ γ₂ (app ⊢M ⊢M₁) 
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
+eval-unsplit sp γ₁ γ₂ (pair ⊢M ⊢M₁)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
+eval-unsplit sp γ₁ γ₂ (pair-E1 ⊢M)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
+eval-unsplit sp γ₁ γ₂ (pair-E2 ⊢M)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
+eval-unsplit sp γ₁ γ₂ (sum-I1 ⊢M) 
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
+eval-unsplit sp γ₁ γ₂ (sum-I2 ⊢N)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢N = refl
+eval-unsplit sp γ₁ γ₂ (sum-E ⊢L ⊢M ⊢N (refl , refl)) 
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢L
+        | ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
+        | ext (λ t → eval-unsplit (lft sp) (γ₁ , _ ⦂ t) γ₂ ⊢N)
+  = refl
 
 module rule-by-rule where
 
   open positive-restricted
+  open Eq.≡-Reasoning
 
-  data
-    _⊢_÷_ : Env Type → Expr → Type → Set₁ 
-   where
+  data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
+
     nat' :
       --------------------
       · ⊢ Nat n ÷ Base (_≡_ n) (_≟_ n)
@@ -495,9 +640,22 @@ module rule-by-rule where
     var' :
       ( · , x ⦂ T) ⊢ Var x ÷ T
 
+    pair-I :
+      Split Γ Γ₁ Γ₂ →
+      Γ₁ ⊢ M ÷ S →
+      Γ₂ ⊢ N ÷ T →
+      --------------------
+      Γ ⊢ Pair M N ÷ (S ⋆ T)
+
+
   corr : Γ ⊢ M ÷ T → ∥ Γ ∥⁺ ⊢ M ⦂ ∥ T ∥
-  corr nat' = nat
-  corr var' = var found
+  corr nat' =
+    nat
+  corr var' =
+    var found
+  corr (pair-I sp ÷M ÷N) =
+    pair (weaken (corr-sp sp) (corr ÷M)) (weaken (split-sym (corr-sp sp)) (corr ÷N))
+
 
   lave :
     (÷M : Γ ⊢ M ÷ T) →
@@ -507,12 +665,25 @@ module rule-by-rule where
     eval (corr ÷M) γ ≡ toRaw T pos t
   lave nat' Pos-Base (n , pn) = · , pn
   lave var' pos t = (· , _ ⦂ toRaw _ pos t) , refl
+  lave (pair-I sp ÷M ÷N) (Pos-⋆ pos₁ pos₂) (t₁ , t₂) 
+    with lave ÷M pos₁ t₁ | lave ÷N pos₂ t₂
+  ... | γ₁ , ih₁ | γ₂ , ih₂ =
+    (unsplit-env (corr-sp sp) γ₁ γ₂) , 
+    Eq.cong₂ _,_ 
+      (begin (eval (weaken (corr-sp sp) (corr ÷M)) (unsplit-env (corr-sp sp) γ₁ γ₂) 
+           ≡⟨ eval-unsplit (corr-sp sp) γ₁ γ₂ (corr ÷M) ⟩
+             ih₁))
+      (begin (eval (weaken (split-sym (corr-sp sp)) (corr ÷N)) (unsplit-env (corr-sp sp) γ₁ γ₂)
+           ≡⟨ Eq.cong (eval (weaken (split-sym (corr-sp sp)) (corr ÷N))) (unsplit-split (corr-sp sp) γ₁ γ₂) ⟩
+             eval (weaken (split-sym (corr-sp sp)) (corr ÷N)) (unsplit-env (split-sym (corr-sp sp)) γ₂ γ₁)
+           ≡⟨ eval-unsplit (split-sym (corr-sp sp)) γ₂ γ₁ (corr ÷N) ⟩
+             ih₂))
 
 data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
   nat' :
     --------------------
-    · ⊢ Nat n ÷ Base (_≡_ n) {!!}
+    · ⊢ Nat n ÷ Base (_≡_ n) λ n₁ → n ≟ n₁
 
   var1 :
     ( · , x ⦂ T) ⊢ Var x ÷ T
@@ -574,11 +745,6 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
 
 
-corr-sp : Split Γ Γ₁ Γ₂ → Split ∥ Γ ∥⁺ ∥ Γ₁ ∥⁺ ∥ Γ₂ ∥⁺
-corr-sp nil = nil
-corr-sp (lft sp) = lft (corr-sp sp)
-corr-sp (rgt sp) = rgt (corr-sp sp)
-
 corr : Γ ⊢ M ÷ T → ∥ Γ ∥⁺ ⊢ M ⦂ ∥ T ∥
 corr (nat') = nat
 corr var1 = var found
@@ -622,54 +788,8 @@ lookup-gen found t = refl
 lookup-gen (there x∈) t = lookup-gen x∈ t
 -}
 
-open Eq.≡-Reasoning
 
-postulate
-  ext : ∀ {A B : Set}{f g : A → B} → (∀ x → f x ≡ g x) → f ≡ g
-
-unsplit-env : Split Γ Γ₁ Γ₂ → iEnv E⟦ Γ₁ ⟧ → iEnv E⟦ Γ₂ ⟧ → iEnv E⟦ Γ ⟧
-unsplit-env nil γ₁ γ₂ = ·
-unsplit-env (lft sp) (γ₁ , _ ⦂ a) γ₂ = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
-unsplit-env (rgt sp) γ₁ (γ₂ , _ ⦂ a) = (unsplit-env sp γ₁ γ₂) , _ ⦂ a
-
-unsplit-split : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
-  unsplit-env sp γ₁ γ₂ ≡ unsplit-env (split-sym sp) γ₂ γ₁
-unsplit-split nil γ₁ γ₂ = refl
-unsplit-split (lft sp) (γ₁ , _ ⦂ a) γ₂ rewrite unsplit-split sp γ₁ γ₂ = refl
-unsplit-split (rgt sp) γ₁ (γ₂ , _ ⦂ a) rewrite unsplit-split sp γ₁ γ₂ = refl
 {-
-lookup-unsplit : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
-  (x∈ : x ⦂ T ∈ Γ₁) →
-  lookup (weaken-∈ sp x∈) (unsplit-env sp γ₁ γ₂) ≡ lookup x∈ γ₁
-lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ found = refl
-lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) found = lookup-unsplit sp γ₁ γ₂ found
-lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ (there x∈) = lookup-unsplit sp γ₁ γ₂ x∈
-lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) (there x∈) = lookup-unsplit sp γ₁ γ₂ (there x∈)
-
-eval-unsplit : (sp : Split Γ Γ₁ Γ₂) (γ₁ : iEnv E⟦ Γ₁ ⟧) (γ₂ : iEnv E⟦ Γ₂ ⟧) →
-  (⊢M : Γ₁ ⊢ M ⦂ T) →
-  eval (weaken sp ⊢M) (unsplit-env sp γ₁ γ₂) ≡ eval ⊢M γ₁
-eval-unsplit sp γ₁ γ₂ (nat')= refl
-eval-unsplit sp γ₁ γ₂ (var x∈) = lookup-unsplit sp γ₁ γ₂ x∈
-eval-unsplit sp γ₁ γ₂ (lam ⊢M) = ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
-eval-unsplit sp γ₁ γ₂ (app ⊢M ⊢M₁) 
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
-eval-unsplit sp γ₁ γ₂ (pair ⊢M ⊢M₁)
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
-eval-unsplit sp γ₁ γ₂ (pair-E1 ⊢M)
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
-eval-unsplit sp γ₁ γ₂ (pair-E2 ⊢M)
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
-eval-unsplit sp γ₁ γ₂ (sum-I1 ⊢M) 
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
-eval-unsplit sp γ₁ γ₂ (sum-I2 ⊢N)
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢N = refl
-eval-unsplit sp γ₁ γ₂ (sum-E ⊢L ⊢M ⊢N) 
-  rewrite eval-unsplit sp γ₁ γ₂ ⊢L
-        | ext (λ s → eval-unsplit (lft sp) (γ₁ , _ ⦂ s) γ₂ ⊢M)
-        | ext (λ t → eval-unsplit (lft sp) (γ₁ , _ ⦂ t) γ₂ ⊢N)
-  = refl
-
 -- soundness of the incorrectness rules
 lave :
   (÷M : Γ ⊢ M ÷ T) →
