@@ -1,2 +1,9 @@
 *.agdai
 MAlonzo/**
+
+.
+./
+*.aux
+*.log
+*.synctex.gz
+auto
