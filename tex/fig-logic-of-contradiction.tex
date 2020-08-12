@@ -1,0 +1,66 @@
+\begin{mathpar}
+  \inferrule[Id]{}{ \FormA \Entails \FormA }
+
+  \inferrule[Thin]{
+    \FormA \Entails \SuccD}{
+    \FormA \Entails \SuccD, \SuccC
+  }
+
+  \inferrule[Cut]{
+    \FormA \Entails \SuccD, \FormB \\
+    \FormB \Entails \SuccC
+  }{
+    \FormA \Entails \SuccD, \SuccC
+  }
+  \\
+  \inferrule[$\Conj$L1]{
+    \FormA \Entails \SuccD 
+  }{
+    \FormA \Conj \FormB \Entails \SuccD
+  }
+
+  \inferrule[$\Conj$L2]{
+    \FormB \Entails \SuccD 
+  }{
+    \FormA \Conj \FormB \Entails \SuccD
+  }
+
+  \inferrule[$\Conj$R]{
+    \FormA \Entails \SuccD, \FormB \\
+    \FormA \Entails \SuccD, \FormC
+  }{
+    \FormA \Entails \SuccD, \FormB \Conj \FormC
+  }
+  \\
+  \inferrule[$\vee$L]{
+    \FormA \Entails \SuccD \\
+    \FormB \Entails \SuccD
+  }{
+    \FormA \vee \FormB \Entails \SuccD
+  }
+
+  \inferrule[$\vee$R]{
+    \FormA \Entails \SuccD, \FormB, \FormC
+  }{
+    \FormA \Entails \SuccD, \FormB \vee \FormC
+  }
+  \\
+  \inferrule[$\butnot$L]{
+    \FormA \Entails \SuccD, \FormB
+  }{
+    \FormA \butnot \FormB \Entails \SuccD
+  }
+
+  \inferrule{
+    \FormA \butnot \FormB \Entails \SuccD    
+  }{
+    \FormA \Entails \SuccD, \FormB
+  }
+
+  \inferrule[$\Truth$R]{}{ \FormA \Entails \Truth }
+\end{mathpar}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "ityping"
+%%% End:

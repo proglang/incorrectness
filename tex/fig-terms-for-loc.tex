@@ -1,0 +1,87 @@
+\begin{displaymath}
+  \begin{array}{llll}
+    \text{Term} & M, N & ::= & \Varx \mid \Pair M N \mid \Inl M \mid \Inr N \\
+    \text{Coterm} & K, L & ::= & \Covara \mid \Fst K \mid \Snd K \mid \Case K L \\
+    \text{Statement}& S & ::= & M \bullet K
+  \end{array}
+\end{displaymath}
+
+\begin{mathpar}
+  \inferrule[IdL]{}{
+    \LeftSequent{ \Covara : \FormA}{ \Covara : \FormA}
+  }
+
+  \inferrule[IdR]{}{
+    \RightSequent{ \Varx : \FormA}{}{\Varx : \FormA}
+  }
+  \\
+  \inferrule[Thin]{
+    \RightSequent{\FormA}{ \SuccD}{ M : \FormB}
+  }{
+    \RightSequent{\FormA}{ \SuccD, \Covara : \FormC}{ M : \FormB}
+  }
+
+  \inferrule[Cut]{
+    \RightSequent{\FormA}{ \SuccD}{ M : \FormB} \\
+    \LeftSequent{K : \FormB}{ \SuccC}
+  }{
+    \CenterSequent\FormA{ M \bullet K}{ \SuccD, \SuccC}
+  }
+  \\
+  \inferrule[$\Conj$L1]{
+    \LeftSequent{K :\FormA}{ \SuccD }
+  }{
+    \LeftSequent{\Fst K : \FormA \Conj \FormB}{ \SuccD}
+  }
+
+  \inferrule[$\Conj$L2]{
+    \LeftSequent{ K :\FormB}{ \SuccD }
+  }{
+    \LeftSequent{\Snd K :\FormA \Conj \FormB}{ \SuccD}
+  }
+
+  \inferrule[$\Conj$R]{
+    \RightSequent{\FormA}{ \SuccD}{ M : \FormB} \\
+    \RightSequent{\FormA}{ \SuccD}{ N : \FormC}
+  }{
+    \RightSequent{\FormA}{ \SuccD}{ \Pair M N : \FormB \Conj \FormC }
+  }
+  \\
+  \inferrule[$\vee$L]{
+    \LeftSequent{ K: \FormA}{ \SuccD} \\
+    \LeftSequent{L :\FormB}{ \SuccD}
+  }{
+    \LeftSequent{\Case KL : \FormA \vee \FormB}{ \SuccD}
+  }
+
+  \inferrule[$\vee$R1]{
+    \RightSequent{\FormA}{ \SuccD}{ M : \FormB }
+  }{
+    \RightSequent{\FormA}{ \SuccD}{ \Inl M : \FormB \vee \FormC }
+  }
+
+  \inferrule[$\vee$R2]{
+    \RightSequent{\FormA}{ \SuccD}{ N : \FormC}
+  }{
+    \RightSequent{\FormA}{ \SuccD}{ \Inr N : \FormB \vee \FormC }
+  }
+  \\
+  \inferrule[$\butnot$L]{
+    \RightSequent{\FormA}{ \SuccD}{ M: \FormB}
+  }{
+    \LeftSequent{\But M : \FormA \butnot \FormB}{ \SuccD}
+  }
+
+  \inferrule[$\butnot$?]{
+    \LeftSequent{ K : \FormA \butnot \FormB}{ \SuccD}
+  }{
+    \RightSequent{\FormA}{ \SuccD}{\Tub{ K} : \FormB}
+  }
+
+  \inferrule[$\Truth$R]{}{ \FormA \Entails \Truth }
+\end{mathpar}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "ityping"
+%%% End:

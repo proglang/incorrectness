@@ -1,0 +1,73 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath}
+\usepackage[utf8]{inputenc}
+\usepackage{mathpartir}
+\usepackage{mathabx}
+\usepackage[outline]{contour}
+
+%%% Goodman's notation
+\newcommand\FormA{\varphi}
+\newcommand\FormB{\psi}
+\newcommand\FormC{\chi}
+\newcommand\SuccC{\Gamma}
+\newcommand\SuccD{\Delta}
+
+\newcommand\Conj{\wedge}
+\newcommand\Truth{\top}
+
+\newcommand\butnot\dotdiv
+
+\newcommand\Entails{\Longrightarrow}
+
+\newcommand\SwitchGentzen{
+  \renewcommand\FormA{A}
+  \renewcommand\FormB{B}
+  \renewcommand\FormC{C}
+  \renewcommand\SuccC{\Lambda}
+  \renewcommand\SuccD{\Theta}
+
+  \renewcommand\Conj{\And}
+  \renewcommand\Truth{\top}
+
+  \renewcommand\Entails{\vdash}
+}
+
+%%% adding proof terms...
+\newcommand\RIGHTARROW{\mathbin{\contour{black}{$\rightarrow$}}}
+\newcommand\SEP{\mathbin{\contour{black}{$\|$}}}
+\newcommand{\RightSequent}[3]{#1 \RIGHTARROW #2 \SEP\, #3}
+\newcommand{\LeftSequent}[2]{#1 \,\SEP\!\!\RIGHTARROW\, #2}
+\newcommand{\CenterSequent}[3]{#1 \,\SEP\, #2 \,\SEP\!\!\RIGHTARROW\, #3}
+
+%%% terms and coterms
+\newcommand\Varx{x}
+\newcommand\Covara\alpha
+\newcommand\Fst[1]{\text{fst}[#1]}
+\newcommand\Snd[1]{\text{snd}[#1]}
+\newcommand\Pair[2]{\langle#1, #2\rangle}
+\newcommand\Case[2]{{[#1, #2]}}
+\newcommand\Inl[1]{\text{inl}\langle#1\rangle}
+\newcommand\Inr[1]{\text{inr}\langle#1\rangle}
+\newcommand\But[1]{\text{but}\langle#1\rangle}
+\newcommand\Tub[1]{\text{tub}[#1]}
+
+\title{Incorrectness Typing}
+\author{Peter Thiemann}
+
+\begin{document}
+\maketitle
+
+Inference rules of Goodman's logic of contradiction
+\input{fig-logic-of-contradiction}
+
+\clearpage
+\SwitchGentzen
+Restyled in Gentzen's notation
+\input{fig-logic-of-contradiction}
+
+\clearpage
+Terms for the logic of contradiction
+\input{fig-terms-for-loc}
+
+\end{document}
