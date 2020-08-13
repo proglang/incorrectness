@@ -3,7 +3,7 @@
 
   \inferrule[Thin]{
     \FormA \Entails \SuccD}{
-    \FormA \Entails \SuccD, \SuccC
+    \FormA \Entails \SuccD, \FormB
   }
 
   \inferrule[Cut]{
@@ -39,8 +39,14 @@
     \FormA \vee \FormB \Entails \SuccD
   }
 
-  \inferrule[$\vee$R]{
-    \FormA \Entails \SuccD, \FormB, \FormC
+  \inferrule[$\vee$R1]{
+    \FormA \Entails \SuccD, \FormB
+  }{
+    \FormA \Entails \SuccD, \FormB \vee \FormC
+  }
+
+  \inferrule[$\vee$R2]{
+    \FormA \Entails \SuccD, \FormC
   }{
     \FormA \Entails \SuccD, \FormB \vee \FormC
   }

@@ -49,8 +49,11 @@
 \newcommand\Case[2]{{[#1, #2]}}
 \newcommand\Inl[1]{\text{inl}\langle#1\rangle}
 \newcommand\Inr[1]{\text{inr}\langle#1\rangle}
-\newcommand\But[1]{\text{but}\langle#1\rangle}
+\newcommand\But[2]{\text{but}\langle#1.#2\rangle}
 \newcommand\Tub[1]{\text{tub}[#1]}
+\newcommand\True{\text{tt}}
+
+\newcommand\EmptySucc\cdot
 
 \title{Incorrectness Typing}
 \author{Peter Thiemann}
@@ -58,7 +61,11 @@
 \begin{document}
 \maketitle
 
-Inference rules of Goodman's logic of contradiction
+Inference rules of Goodman's logic of contradiction. Equivalent modifications:
+\begin{enumerate}
+\item Thinning rule restricted to add a single formula (fix: apply multiple times)
+\item Rule $\vee$R split in two rules to expose computational content (fix: apply thinning)
+\end{enumerate}
 \input{fig-logic-of-contradiction}
 
 \clearpage
