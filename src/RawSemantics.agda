@@ -35,6 +35,7 @@ data Expr : Set where
   Lam : Id → Expr → Expr
   App : Expr → Expr → Expr
   Pair : Expr → Expr → Expr
+  LetPair : Id → Id → Expr → Expr → Expr
   Fst Snd : Expr → Expr
   Inl Inr : Expr → Expr
   Case : Expr → Id → Expr → Id → Expr → Expr
@@ -132,6 +133,12 @@ data _⊢_⦂_ : Env RawType → Expr → RawType → Set₁ where
     --------------------
     Δ ⊢ Pair M N ⦂ (RS ⋆ RT)
 
+  pair-E :
+    Δ ⊢ M ⦂ (RS ⋆ RT) →
+    ((Δ , x ⦂ RS) , y ⦂ RT) ⊢ N ⦂ RU →
+    ------------------------------
+    Δ ⊢ LetPair x y M N ⦂ RU
+
   pair-E1 :
     Δ ⊢ M ⦂ (RS ⋆ RT) →
     --------------------
@@ -175,6 +182,8 @@ eval (var x∈) γ = glookup x∈ γ
 eval (lam ⊢M) γ = λ s → eval ⊢M (γ , _ ⦂ s)
 eval (app ⊢M ⊢N) γ = eval ⊢M γ (eval ⊢N γ)
 eval (pair ⊢M ⊢N) γ = (eval ⊢M γ) , (eval ⊢N γ)
+eval (pair-E ⊢M ⊢N) γ with eval ⊢M γ
+... | vx , vy = eval ⊢N ((γ , _ ⦂ vx) , _ ⦂ vy)
 eval (pair-E1 ⊢M) γ = proj₁ (eval ⊢M γ)
 eval (pair-E2 ⊢M) γ = proj₂ (eval ⊢M γ)
 eval (sum-I1 ⊢M) γ = inj₁ (eval ⊢M γ)
@@ -504,6 +513,7 @@ weaken sp (var x∈) = var (weaken-∈ sp x∈)
 weaken sp (lam ⊢M) = lam (weaken (lft sp) ⊢M)
 weaken sp (app ⊢M ⊢N) = app (weaken sp ⊢M) (weaken sp ⊢N)
 weaken sp (pair ⊢M ⊢N) = pair (weaken sp ⊢M) (weaken sp ⊢N)
+weaken sp (pair-E ⊢M ⊢N) = pair-E (weaken sp ⊢M) (weaken (lft (lft sp)) ⊢N)
 weaken sp (pair-E1 ⊢M) = pair-E1 (weaken sp ⊢M)
 weaken sp (pair-E2 ⊢M) = pair-E2 (weaken sp ⊢M)
 weaken sp (sum-I1 ⊢M) = sum-I1 (weaken sp ⊢M)
@@ -612,6 +622,8 @@ eval-unsplit sp γ₁ γ₂ (app ⊢M ⊢M₁)
   rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
 eval-unsplit sp γ₁ γ₂ (pair ⊢M ⊢M₁)
   rewrite eval-unsplit sp γ₁ γ₂ ⊢M | eval-unsplit sp γ₁ γ₂ ⊢M₁ = refl
+eval-unsplit sp γ₁ γ₂ (pair-E ⊢M ⊢N)
+  rewrite eval-unsplit sp γ₁ γ₂ ⊢M = eval-unsplit (lft (lft sp)) ((γ₁ , _ ⦂ _) , _ ⦂ _) γ₂ ⊢N
 eval-unsplit sp γ₁ γ₂ (pair-E1 ⊢M)
   rewrite eval-unsplit sp γ₁ γ₂ ⊢M = refl
 eval-unsplit sp γ₁ γ₂ (pair-E2 ⊢M)
