@@ -17,8 +17,9 @@ open Eq.≡-Reasoning
 open import Level hiding (_⊔_) renaming (zero to lzero; suc to lsuc)
 
 {- TODO:
+* might be useful to distinguish positive and negative (refinement) types from the start
 * subtyping of refinement types
-* union types
+* union types: want a rule to convert from a (union) type to a sum type using a decidable predicate
 * intersection types
 -}
 
@@ -69,6 +70,10 @@ data Env (A : Set ℓ) : Set ℓ where
   · : Env A
   _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
 
+data AllEnv (A : Set ℓ) (P : A → Set) : Env A → Set ℓ where
+  · : AllEnv A P ·
+  _,_ : ∀ {γ}{x : Id}{a : A} → AllEnv A P γ → P a → AllEnv A P (γ , x ⦂ a)
+
 variable
   L M N : Expr
 
@@ -103,6 +108,12 @@ data jEnv {A : Set ℓ} (⟦_⟧ : A → Set) : Env A → Set where
   · : jEnv ⟦_⟧ ·
   _,_⦂_ : ∀ {E}{A} → jEnv ⟦_⟧ E → (x : Id) → (a : ⟦ A ⟧) → jEnv ⟦_⟧ (E , x ⦂ A)
 
+-- F here is a natural transformation
+jEnvMap : {A : Set ℓ} {⟦_⟧ ⟦_⟧′ : A → Set}{E : Env A} →
+  (F : {a : A} → ⟦ a ⟧ → ⟦ a ⟧′) →
+  jEnv ⟦_⟧ E → jEnv ⟦_⟧′ E
+jEnvMap F · = ·
+jEnvMap F (env , x ⦂ ⟦a⟧) = (jEnvMap F env) , x ⦂ F ⟦a⟧
 
 -- should be in terms of RawType for evaluation
 
@@ -157,7 +168,7 @@ data _⊢_⦂_ : Env RawType → Expr → RawType → Set₁ where
   sum-I2 :
     Δ ⊢ N ⦂ RT →
     --------------------
-    Δ ⊢ Inl N ⦂ (RS ⊹ RT)
+    Δ ⊢ Inr N ⦂ (RS ⊹ RT)
   
   sum-E :
     Δ ⊢ L ⦂ (RS ⊹ RT) →
@@ -230,6 +241,18 @@ T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
 T⟦ S ⊹ˡ T ⟧ = T⟦ S ⟧
 T⟦ S ⊹ʳ T ⟧ = T⟦ T ⟧
+
+M⟦_⟧ V⟦_⟧ : Type → (Set → Set) → Set
+
+V⟦ Base P p ⟧ m = Σ ℕ P
+V⟦ Nat ⟧ m = ℕ
+V⟦ T ⇒ T₁ ⟧ m = V⟦ T ⟧ m → M⟦ T₁ ⟧ m
+V⟦ T ⋆ T₁ ⟧ m = V⟦ T ⟧ m × V⟦ T₁ ⟧ m
+V⟦ T ⊹ T₁ ⟧ m = V⟦ T ⟧ m ⊎ V⟦ T₁ ⟧ m
+V⟦ T ⊹ˡ T₁ ⟧ m = V⟦ T ⟧ m
+V⟦ T ⊹ʳ T₁ ⟧ m = V⟦ T₁ ⟧ m
+
+M⟦ T ⟧ m = m (V⟦ T ⟧ m)
 
 E⟦_⟧ : Env Type → Env Set
 E⟦_⟧ = T⟦_⟧ ⁺
@@ -489,6 +512,58 @@ data _<:_ : Type → Type → Set where
 <:-⊓ (S ⊹ˡ S₁) T = {!!}
 <:-⊓ (S ⊹ʳ S₁) T = {!!}
 
+-- subtyping generates an embedding and a projection
+embed : (S <: T) → T⟦ S ⟧ → T⟦ T ⟧
+embed <:-refl s = s
+embed (<:-base P Q p→q) (s , p) = s , p→q s p
+embed <:-base-nat (s , p) = s
+embed (<:-⇒ s<:t s<:t₁) s = λ x → embed s<:t₁ (s (embed s<:t x))
+embed (<:-⋆ s<:t s<:t₁) (s , t) = (embed s<:t s) , (embed s<:t₁ t)
+embed (<:-⊹ s<:t s<:t₁) (inj₁ x) = inj₁ (embed s<:t x)
+embed (<:-⊹ s<:t s<:t₁) (inj₂ y) = inj₂ (embed s<:t₁ y)
+embed (<:-⊹ˡ-⊹ s<:t) s = inj₁ (embed s<:t s)
+embed (<:-⊹ʳ-⊹ s<:t) s = inj₂ (embed s<:t s)
+
+{- no definable
+inject : T⟦ S ⟧ → V⟦ S ⟧ Maybe
+eject  : V⟦ S ⟧ Maybe → Maybe T⟦ S ⟧
+
+inject {Base P p} s = s
+inject {Nat} s = s
+inject {S ⇒ S₁} s = λ x → eject{S} x >>= λ x₁ → let s₁ = s x₁ in just (inject {S₁} s₁)
+inject {S ⋆ S₁} (s , s₁) = (inject{S} s) , (inject{S₁} s₁)
+inject {S ⊹ S₁} (inj₁ x) = inj₁ (inject{S} x)
+inject {S ⊹ S₁} (inj₂ y) = inj₂ (inject{S₁} y)
+inject {S ⊹ˡ S₁} s = inject{S} s
+inject {S ⊹ʳ S₁} s = inject{S₁} s
+
+eject {Base P p} s = {!!}
+eject {Nat} s = {!!}
+eject {S ⇒ S₁} s = just (λ x → {!!})
+eject {S ⋆ S₁} s = {!!}
+eject {S ⊹ S₁} s = {!!}
+eject {S ⊹ˡ S₁} s = {!!}
+eject {S ⊹ʳ S₁} s = {!!}
+-}
+
+project : (S <: T) → V⟦ T ⟧ Maybe → M⟦ S ⟧ Maybe
+project <:-refl t = just t
+project (<:-base P Q {p = p} p→q) (t , qt)
+  with p t
+... | no ¬p = nothing
+... | yes p₁ = just (t , p₁)
+project (<:-base-nat{p = p}) t
+  with p t
+... | no ¬p = nothing
+... | yes p₁ = just (t , p₁)
+project (<:-⇒ s<:t s<:t₁) t = just λ s → project s<:t s >>= t >>= project s<:t₁
+project (<:-⋆ s<:t s<:t₁) (s , t) = project s<:t s >>= λ x → project s<:t₁ t >>= λ x₁ → just (x , x₁)
+project (<:-⊹ s<:t s<:t₁) (inj₁ x) = Data.Maybe.map inj₁ (project s<:t x)
+project (<:-⊹ s<:t s<:t₁) (inj₂ y) = Data.Maybe.map inj₂ (project s<:t₁ y)
+project (<:-⊹ˡ-⊹ s<:t) (inj₁ x) = project s<:t x
+project (<:-⊹ˡ-⊹ s<:t) (inj₂ y) = nothing
+project (<:-⊹ʳ-⊹ s<:t) (inj₁ x) = nothing
+project (<:-⊹ʳ-⊹ s<:t) (inj₂ y) = project s<:t y
 
 split-sym : Split Φ Φ₁ Φ₂ → Split Φ Φ₂ Φ₁
 split-sym nil = nil
@@ -532,12 +607,27 @@ mutual
     Pos-⇒ : Neg S → Pos T → Pos (S ⇒ T)
     Pos-⋆ : Pos S → Pos T → Pos (S ⋆ T)
     Pos-⊹ : Pos S → Pos T → Pos (S ⊹ T)
+    Pos-⊹ˡ : Pos S → Pos (S ⊹ˡ T)
+    Pos-⊹ʳ : Pos T → Pos (S ⊹ʳ T)
 
   data Neg : Type → Set where
     Neg-Nat : Neg Nat
     Neg-⇒ : Pos S → Neg T → Neg (S ⇒ T)
     Neg-⋆ : Neg S → Neg T → Neg (S ⋆ T)
     Neg-⊹ : Neg S → Neg T → Neg (S ⊹ T)
+
+pos-unique : ∀ T → (pos pos' : Pos T) → pos ≡ pos'
+neg-unique : ∀ T → (neg neg' : Neg T) → neg ≡ neg'
+
+pos-unique (Base P p) Pos-Base Pos-Base = refl
+pos-unique Nat Pos-Nat Pos-Nat = refl
+pos-unique (T ⇒ T₁) (Pos-⇒ x pos) (Pos-⇒ x₁ pos') rewrite neg-unique T x x₁ | pos-unique T₁ pos pos' = refl
+pos-unique (T ⋆ T₁) (Pos-⋆ pos pos₁) (Pos-⋆ pos' pos'') rewrite pos-unique T pos pos' | pos-unique T₁ pos₁ pos'' = refl
+pos-unique (T ⊹ T₁) (Pos-⊹ pos pos₁) (Pos-⊹ pos' pos'') rewrite pos-unique T pos pos' | pos-unique T₁ pos₁ pos'' = refl
+pos-unique (T ⊹ˡ T₁) (Pos-⊹ˡ pos) (Pos-⊹ˡ pos') rewrite pos-unique T pos pos' = refl
+pos-unique (T ⊹ʳ T₁) (Pos-⊹ʳ pos) (Pos-⊹ʳ pos') rewrite pos-unique T₁ pos pos' = refl
+--etc
+neg-unique T neg neg' = {!!}
 
 module positive-restricted where
   toRaw : ∀ T → Pos T → T⟦ T ⟧ → R⟦ ∥ T ∥ ⟧
@@ -549,6 +639,8 @@ module positive-restricted where
   toRaw (T ⋆ T₁) (Pos-⋆ pos pos₁) (t , t₁) = toRaw T pos t , (toRaw T₁ pos₁ t₁)
   toRaw (T ⊹ T₁) (Pos-⊹ pos pos₁) (inj₁ x) = inj₁ (toRaw T pos x)
   toRaw (T ⊹ T₁) (Pos-⊹ pos pos₁) (inj₂ y) = inj₂ (toRaw T₁ pos₁ y)
+  toRaw (S ⊹ˡ T) (Pos-⊹ˡ pos) x = inj₁ (toRaw S pos x)
+  toRaw (S ⊹ʳ T) (Pos-⊹ʳ pos) y = inj₂ (toRaw T pos y)
 
   fromRaw (Base P p) () r
   fromRaw Nat Neg-Nat r = r
@@ -557,6 +649,10 @@ module positive-restricted where
   fromRaw (T ⊹ T₁) (Neg-⊹ neg neg₁) (inj₁ x) = inj₁ (fromRaw T neg x)
   fromRaw (T ⊹ T₁) (Neg-⊹ neg neg₁) (inj₂ y) = inj₂ (fromRaw T₁ neg₁ y)
   
+  toRawEnv : AllEnv Type Pos Γ → jEnv T⟦_⟧ Γ → jEnv R⟦_⟧ ∥ Γ ∥⁺
+  toRawEnv{·} posΓ · = ·
+  toRawEnv{Γ , _ ⦂ T} (posΓ , x₁) (γ , x ⦂ a) = toRawEnv{Γ} posΓ γ , x ⦂ toRaw T x₁ a
+
 {-
 -- attempt to map type (interpretation) to corresponding raw type (interpretation)
 -- * must be monadic because of refinement
@@ -612,6 +708,17 @@ lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) found = lookup-unsplit sp γ₁ 
 lookup-unsplit (lft sp) (γ₁ , _ ⦂ a) γ₂ (there x∈) = lookup-unsplit sp γ₁ γ₂ x∈
 lookup-unsplit (rgt sp) γ₁ (γ₂ , _ ⦂ a) (there x∈) = lookup-unsplit sp γ₁ γ₂ (there x∈)
 
+open positive-restricted
+eval-unsplit' : (sp : Split Γ Γ₁ Γ₂) (γ₁ : jEnv T⟦_⟧ Γ₁) (γ₂ : jEnv T⟦_⟧ Γ₂) →
+  (posΓ₁ : AllEnv Type Pos Γ₁) (posΓ₂ : AllEnv Type Pos Γ₂) →
+  (⊢M : ∥ Γ₁ ∥⁺ ⊢ M ⦂ RT) →
+  eval (weaken (corr-sp sp) ⊢M) (unsplit-env (corr-sp sp) (toRawEnv posΓ₁ γ₁) (toRawEnv posΓ₂ γ₂)) ≡ eval ⊢M (toRawEnv posΓ₁ γ₁)
+eval-unsplit' sp γ₁ γ₂ posΓ₁ posΓ₂ ⊢M = {!!}
+{-
+      (eval (weaken (corr-sp sp) (corr ÷M))
+       (toRawEnv posΓ (unsplit-env sp γ₁ γ₂)))
+-}
+
 eval-unsplit : (sp : Split Δ Δ₁ Δ₂) (γ₁ : jEnv R⟦_⟧ Δ₁) (γ₂ : jEnv R⟦_⟧ Δ₂) →
   (⊢M : Δ₁ ⊢ M ⦂ RT) →
   eval (weaken sp ⊢M) (unsplit-env sp γ₁ γ₂) ≡ eval ⊢M γ₁
@@ -659,6 +766,24 @@ module rule-by-rule where
       --------------------
       Γ ⊢ Pair M N ÷ (S ⋆ T)
 
+    sum-I1 :
+      Γ ⊢ M ÷ S →
+      --------------------
+      Γ ⊢ Inl M ÷ (S ⊹ˡ T)
+
+    sum-I2 :
+      Γ ⊢ M ÷ T →
+      --------------------
+      Γ ⊢ Inr M ÷ (S ⊹ʳ T)
+
+    {- perhaps this rule should involve splitting between L and M,N -}
+    sum-Case :
+      Split Γ Γ₁ Γ₂ →
+      Γ₁ ⊢ L ÷ (S ⊹ T) →
+      (Γ₂ , x ⦂ S) ⊢ M ÷ (U ⊹ˡ U′) →
+      (Γ₂ , y ⦂ T) ⊢ N ÷ (U ⊹ʳ U′) →
+      ------------------------------
+      Γ ⊢ Case L x M y N ÷ (U ⊹ U′)
 
   corr : Γ ⊢ M ÷ T → ∥ Γ ∥⁺ ⊢ M ⦂ ∥ T ∥
   corr nat' =
@@ -667,7 +792,52 @@ module rule-by-rule where
     var found
   corr (pair-I sp ÷M ÷N) =
     pair (weaken (corr-sp sp) (corr ÷M)) (weaken (split-sym (corr-sp sp)) (corr ÷N))
+  corr (sum-I1 ÷M) = 
+    sum-I1 (corr ÷M)
+  corr (sum-I2 ÷M) =
+    sum-I2 (corr ÷M)
+  corr (sum-Case sp ÷L ÷M ÷N) =
+    sum-E (weaken (corr-sp sp) (corr ÷L))
+          (weaken (split-sym (corr-sp (rgt sp))) (corr ÷M))
+          (weaken (split-sym (corr-sp (rgt sp))) (corr ÷N)) 
+          (refl , refl) 
 
+  applySplit : {A : Set ℓ}{P : A → Set}{Θ Θ₁ Θ₂ : Env A} →
+    Split Θ Θ₁ Θ₂ → AllEnv A P Θ → AllEnv A P Θ₁ × AllEnv A P Θ₂
+  applySplit nil · = · , ·
+  applySplit (lft sp) (ae , x)
+    with applySplit sp ae
+  ... | ae1 , ae2 = (ae1 , x) , ae2
+  applySplit (rgt sp) (ae , x)
+    with applySplit sp ae
+  ... | ae1 , ae2 = ae1 , (ae2 , x)
+
+  lave' :
+    (÷M : Γ ⊢ M ÷ T) →
+    (posT : Pos T) →
+    (posΓ : AllEnv Type Pos Γ) →
+    ∀ (t : T⟦ T ⟧) →
+    ∃ λ (γ : jEnv T⟦_⟧ Γ) →
+    eval (corr ÷M) (toRawEnv posΓ γ) ≡ toRaw T posT t
+  lave' nat' Pos-Base posΓ (n , refl) = · , refl
+  lave' var' posT (· , posT') t rewrite pos-unique _ posT posT' = (· , _ ⦂ t) , refl
+  lave' (pair-I x ÷M ÷M₁) posT posΓ t = {!!}
+  lave' (sum-I1 ÷M) (Pos-⊹ˡ posT) posΓ t
+    with lave' ÷M posT posΓ t
+  ... | γ , ih = γ , Eq.cong inj₁ ih
+  lave' (sum-I2 ÷M) (Pos-⊹ʳ posT) posΓ t
+    with lave' ÷M posT posΓ t
+  ... | γ , ih = γ , Eq.cong inj₂ ih
+  lave' (sum-Case sp ÷M ÷M₁ ÷M₂) (Pos-⊹ posT posT₁) posΓ (inj₁ x)
+    with applySplit sp posΓ
+  ... | posΓ₁ , posΓ₂
+    with lave' ÷M₁ (Pos-⊹ˡ posT) (posΓ₂ , {!!}) x
+  ... | (γ₂ , _ ⦂ s) , ih₂
+    with lave' ÷M (Pos-⊹ {!!} {!!}) posΓ₁ (inj₁ s)
+  ... | γ₁ , ih₁ =
+    let ih₂′ = {!eval-unsplit' sp γ₁ γ₂ posΓ₁ posΓ₂ (corr ÷M) !} in 
+    (unsplit-env sp γ₁ γ₂) , {!!}
+  lave' (sum-Case sp ÷M ÷M₁ ÷M₂) (Pos-⊹ posT posT₁) posΓ (inj₂ y) = {!!}
 
   lave :
     (÷M : Γ ⊢ M ÷ T) →
@@ -690,6 +860,18 @@ module rule-by-rule where
              eval (weaken (split-sym (corr-sp sp)) (corr ÷N)) (unsplit-env (split-sym (corr-sp sp)) γ₂ γ₁)
            ≡⟨ eval-unsplit (split-sym (corr-sp sp)) γ₂ γ₁ (corr ÷N) ⟩
              ih₂))
+  lave (sum-I1 ÷M) (Pos-⊹ˡ pos) t
+    with lave ÷M pos t
+  ... | γ , ih = γ , Eq.cong inj₁ ih
+  lave (sum-I2 ÷M) (Pos-⊹ʳ pos) t
+    with lave ÷M pos t
+  ... | γ , ih = γ , Eq.cong inj₂ ih
+  lave (sum-Case sp ÷L ÷M ÷N) (Pos-⊹ p p₁) (inj₁ x)
+    with lave ÷M (Pos-⊹ˡ p) x
+  ... | (γ₂ , _ ⦂ a) , ih₂
+    with lave ÷L {!!} (inj₁ {!!})
+  ... | γ₁ , ih₁ = {!!}
+  lave (sum-Case sp ÷L ÷M ÷N) (Pos-⊹ p p₁) (inj₂ y) = {!!}
 
 data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
