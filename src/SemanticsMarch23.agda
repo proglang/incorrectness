@@ -386,10 +386,12 @@ T'⟦_⟧ : Type → Set
 
 T'⟦ Base P ∃P ⟧ = Σ ℕ P
 T'⟦ Nat ⟧ = ℕ
-T'⟦ S ⇒ T ⟧ = Σ (T⟦ S ⟧ → T⟦ T ⟧) (λ f → ∀ (t : T'⟦ T ⟧) → ∃ λ (s : T'⟦ S ⟧) → f (↓ s) ≡ (↓ t))
+T'⟦ S ⇒ T ⟧ = Σ (T⟦ S ⟧ → T⟦ T ⟧) (λ f → ∃ λ (t : T'⟦ T ⟧) → ∃ λ (s : T'⟦ S ⟧) → f (↓ s) ≡ (↓ t))
 T'⟦ S ⋆ T ⟧ = T'⟦ S ⟧ × T'⟦ T ⟧
 T'⟦ S ⊹ T ⟧ = T'⟦ S ⟧ ⊎ T'⟦ T ⟧
-
+{- alternative?
+T'⟦ S ⇒ T ⟧ = Σ (T⟦ S ⟧ → T⟦ T ⟧) (λ f → ∀ (t : T'⟦ T ⟧) → ∃ λ (s : T'⟦ S ⟧) → f (↓ s) ≡ (↓ t))
+-}
 ↓_ {Base P ∃P} t = t
 ↓_ {Nat} t = t
 ↓_ {S ⇒ T} t = proj₁ t
@@ -530,11 +532,19 @@ unsplit-env' (rgt sp) γ₁ (γ₂ , _ ⦂ a) = (unsplit-env' sp γ₁ γ₂) , 
 
 -- pick one element of a type to demonstrate non-emptiness
 one' : ∀ (T : Type) → T'⟦ T ⟧
+one≡↓one' : ∀ T → one T ≡ ↓ one' T
+
 one' (Base P ∃P) = ∃P
 one' Nat = zero
-one' (S ⇒ T) = one (S ⇒ T) , (λ t → (one' S) , {!!}) -- not sure how to complete this
+one' (S ⇒ T) = one (S ⇒ T) , (one' T) , ((one' S) , one≡↓one' T)
 one' (S ⋆ T) = one' S , one' T
 one' (S ⊹ T) = inj₁ (one' S)
+
+one≡↓one' (Base P ∃P) = refl
+one≡↓one' Nat = refl
+one≡↓one' (S ⇒ T) = refl
+one≡↓one' (S ⋆ T) = Eq.cong₂ _,_ (one≡↓one' S) (one≡↓one' T)
+one≡↓one' (S ⊹ T) = Eq.cong inj₁ (one≡↓one' S)
 
 eval' :
   (÷M : Γ ⊢ M ÷ T) →
@@ -542,12 +552,9 @@ eval' :
   iEnv E'⟦ Γ ⟧
 eval' nat' t' = ·
 eval' var1 t' = · , _ ⦂ t'
-eval' {Γ = Γ}{T = T} (lam ÷M) t' = {!!}
-  where
-    aux : T'⟦ T ⟧ → iEnv E'⟦ Γ ⟧
-    aux t'
-      with eval' ÷M {!t'!}
-    ... | ih = {!!}
+eval' {Γ = Γ} {T = .(_ ⇒ _)} (lam ÷M) (f , t' , s' , fs'≡t')
+  with eval' ÷M t'
+... | ih , _ ⦂ a = ih
 eval' (pair x ÷M ÷N) (s' , t') = unsplit-env' x (eval' ÷M s') (eval' ÷N t')
 eval' (pair-E1{S = T₁}{T = T₂} ÷M) t' = eval' ÷M (t' , one' T₂)
 eval' (pair-E2{S = T₁}{T = T₂} ÷M) t' = eval' ÷M (one' T₁ , t')
