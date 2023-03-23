@@ -35,6 +35,8 @@ data Expr : Set where
   Inl Inr : Expr → Expr
   Case : Expr → Id → Expr → Id → Expr → Expr
 
+-- simple types
+
 data RawType : Set where
   Nat : RawType
   _⇒_ _⋆_ _⊹_ : RawType → RawType → RawType
@@ -48,35 +50,44 @@ ss⋆tt refl = refl , refl
 ss⊹tt : ∀ {S S₁ T T₁ : RawType} → (S ⊹ S₁) ≡ (T ⊹ T₁) → (S ≡ T × S₁ ≡ T₁)
 ss⊹tt refl = refl , refl
 
+-- refinement types
+-- given by a semantic, non-empty predicate on ℕ
 
 data Type : Set₁ where
-  Base : (P : ℕ → Set) → Type -- refinement
+  Base : (P : ℕ → Set) → (∃P : Σ ℕ P) → Type -- refinement
   Nat : Type
   _⇒_ : Type → Type → Type
   _⋆_ : Type → Type → Type
   _⊹_ : Type → Type → Type
 
-T-Nat = Base (λ n → ⊤) -- all natural numbers
+T-Nat = Base (λ n → ⊤) (zero , tt) -- all natural numbers
 
-data ne : Type → Set where
-  ne-base : ∀ {P} → (∃P : Σ ℕ P) → ne (Base P)
-  ne-nat : ne Nat
-  ne-⇒ : ∀ {S T} → ne S → ne T → ne (S ⇒ T)
-  ne-⋆ : ∀ {S T} → ne S → ne T → ne (S ⋆ T)
-  ne-⊹L : ∀ {S T} → ne S → ne (S ⊹ T)
-  ne-⊹R : ∀ {S T} → ne T → ne (S ⊹ T)
+-- -- non-empty type
+
+-- data ne : Type → Set where
+--   ne-base : ∀ {P} → (∃P : Σ ℕ P) → ne (Base P)
+--   ne-nat : ne Nat
+--   ne-⇒ : ∀ {S T} → ne S → ne T → ne (S ⇒ T)
+--   ne-⋆ : ∀ {S T} → ne S → ne T → ne (S ⋆ T)
+--   ne-⊹L : ∀ {S T} → ne S → ne (S ⊹ T)
+--   ne-⊹R : ∀ {S T} → ne T → ne (S ⊹ T)
+
+-- type environments
 
 data Env (A : Set ℓ) : Set ℓ where
   · : Env A
   _,_⦂_ : Env A → (x : Id) → (a : A) → Env A
 
+-- underlying raw type, erases refinements
+
 ∥_∥ : Type → RawType
-∥ Base P ∥ = Nat
+∥ Base P ∃P ∥ = Nat
 ∥ Nat ∥ = Nat
 ∥ S ⇒ S₁ ∥ = ∥ S ∥ ⇒ ∥ S₁ ∥
 ∥ S ⋆ S₁ ∥ = ∥ S ∥ ⋆ ∥ S₁ ∥
 ∥ S ⊹ S₁ ∥ = ∥ S ∥ ⊹ ∥ S₁ ∥
 
+-- operations on semantic predicates
 
 _∨_ : (P Q : ℕ → Set) → ℕ → Set
 P ∨ Q = λ n → P n ⊎ Q n
@@ -92,9 +103,9 @@ p*q->p n (Pn , Qn) = Pn
 
 _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 
-(Base P ⊔ Base P₁) {refl} = Base (P ∨ P₁)
-(Base P ⊔ Nat) = Nat
-(Nat ⊔ Base P) = Nat
+(Base P ∃P ⊔ Base Q ∃Q) {refl} = Base (P ∨ Q) (proj₁ ∃P , inj₁ (proj₂ ∃P))
+(Base P ∃P ⊔ Nat) = Nat
+(Nat ⊔ Base Q ∃Q) = Nat
 (Nat ⊔ Nat) = Nat
 ((S ⇒ S₁) ⊔ (T ⇒ T₁)) {r} with ss⇒tt r
 ... | sss , ttt = (S ⊓ T){sss} ⇒ (S₁ ⊔ T₁){ttt}
@@ -103,9 +114,10 @@ _⊔_ _⊓_  : (S T : Type) {r : ∥ S ∥ ≡ ∥ T ∥} → Type
 ((S ⊹ S₁) ⊔ (T ⊹ T₁)) {r} with ss⊹tt r
 ... | sss , ttt = (S ⊔ T){sss} ⊹ (S₁ ⊔ T₁){ttt}
 
-Base P ⊓ Base P₁ = Base (P ∧ P₁)
-Base P ⊓ Nat = Base P
-Nat ⊓ Base P = Base P
+-- cannot prove non-emptyness here
+Base P ∃P ⊓ Base Q ∃Q = Base (P ∧ Q) {!!}
+Base P ∃P ⊓ Nat = Base P ∃P
+Nat ⊓ Base P ∃P = Base P ∃P
 Nat ⊓ Nat = Nat
 ((S ⇒ S₁) ⊓ (T ⇒ T₁)){r} with ss⇒tt r
 ... | sss , ttt = (S ⊔ T){sss} ⇒ (S₁ ⊓ T₁){ttt}
@@ -144,11 +156,13 @@ data _<:_ : Type → Type → Set where
 
   <:-base : 
     (P Q : ℕ → Set) →
+    ∀ ∃P ∃Q →
     (p→q : ∀ n → P n → Q n) →
-    Base P <: Base Q
+    Base P ∃P <: Base Q ∃Q
 
   <:-base-nat :
-    Base P <: Nat
+    ∀ {∃P} →
+    Base P ∃P <: Nat
     
   <:-⇒ :
     S′ <: S →
@@ -169,7 +183,7 @@ data _<:_ : Type → Type → Set where
 
 <:-raw : S <: T → ∥ S ∥ ≡ ∥ T ∥
 <:-raw <:-refl = refl
-<:-raw (<:-base P Q p→q) = refl
+<:-raw (<:-base P Q ∃P ∃Q p→q) = refl
 <:-raw <:-base-nat = refl
 <:-raw (<:-⇒ s<:t s<:t₁) = Eq.cong₂ _⇒_ (Eq.sym (<:-raw s<:t)) (<:-raw s<:t₁)
 <:-raw (<:-⋆ s<:t s<:t₁) = Eq.cong₂ _⋆_ (<:-raw s<:t) (<:-raw s<:t₁)
@@ -178,9 +192,9 @@ data _<:_ : Type → Type → Set where
 <:-⊔ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → S <: (S ⊔ T){c}
 <:-⊓ : ∀ S T → {c : ∥ S ∥ ≡ ∥ T ∥} → (S ⊓ T){c} <: S
 
-<:-⊔ (Base P) (Base P₁) {refl} = <:-base P (P ∨ P₁) implies
-<:-⊔ (Base P) Nat = <:-base-nat
-<:-⊔ Nat (Base P) = <:-refl
+<:-⊔ (Base P ∃P) (Base Q ∃Q) {refl} = {!!} -- <:-base P (P ∨ P₁) implies
+<:-⊔ (Base P ∃P) Nat = <:-base-nat
+<:-⊔ Nat (Base Q ∃Q) = <:-refl
 <:-⊔ Nat Nat = <:-refl
 <:-⊔ (S ⇒ S₁) (T ⇒ T₁) {c} with ss⇒tt c
 ... | c1 , c2 = <:-⇒ (<:-⊓ S T) (<:-⊔ S₁ T₁)
@@ -189,9 +203,9 @@ data _<:_ : Type → Type → Set where
 <:-⊔ (S ⊹ S₁) (T ⊹ T₁) {c} with ss⊹tt c
 ... | c1 , c2 = <:-⊹ (<:-⊔ S T) (<:-⊔ S₁ T₁)
 
-<:-⊓ (Base P) (Base P₁) {refl} = <:-base (P ∧ P₁) P p*q->p
-<:-⊓ (Base P) Nat = <:-refl
-<:-⊓ Nat (Base P) = <:-base-nat
+<:-⊓ (Base P ∃P) (Base Q ∃Q) {refl} = {!!} -- <:-base (P ∧ P₁) P p*q->p
+<:-⊓ (Base P ∃P) Nat = <:-refl
+<:-⊓ Nat (Base Q ∃Q) = <:-base-nat
 <:-⊓ Nat Nat = <:-refl
 <:-⊓ (S ⇒ S₁) (T ⇒ T₁) {c} with ss⇒tt c
 ... | c1 , c2 = <:-⇒ (<:-⊔ S T) (<:-⊓ S₁ T₁)
@@ -202,10 +216,12 @@ data _<:_ : Type → Type → Set where
 
 -- should be in terms of RawType for evaluation
 
+-- standard typing
+
 data _⊢_⦂_ : Env Type → Expr → Type → Set₁ where
 
   nat' :
-    Γ ⊢ Nat n ⦂ Base (_≡_ n)
+    Γ ⊢ Nat n ⦂ Base (_≡_ n) (n , refl)
 
   var :
     (x∈ : x ⦂ T ∈ Γ) →
@@ -247,7 +263,7 @@ data _⊢_⦂_ : Env Type → Expr → Type → Set₁ where
   sum-I2 :
     Γ ⊢ N ⦂ T →
     --------------------
-    Γ ⊢ Inl N ⦂ (S ⊹ T)
+    Γ ⊢ Inr N ⦂ (S ⊹ T)
   
   sum-E :
     Γ ⊢ L ⦂ (S ⊹ T) →
@@ -255,6 +271,8 @@ data _⊢_⦂_ : Env Type → Expr → Type → Set₁ where
     (Γ , y ⦂ T) ⊢ N ⦂ U →
     --------------------
     Γ ⊢ Case L x M y N ⦂ U
+
+-- auxiliary definitions
 
 split-sym : Split Γ Γ₁ Γ₂ → Split Γ Γ₂ Γ₁
 split-sym nil = nil
@@ -288,7 +306,7 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
 
   nat' :
     --------------------
-    · ⊢ Nat n ÷ Base (_≡_ n)
+    · ⊢ Nat n ÷ Base (_≡_ n) (n , refl)
 
   var1 :
     ( · , x ⦂ T) ⊢ Var x ÷ T
@@ -347,6 +365,8 @@ data _⊢_÷_ : Env Type → Expr → Type → Set₁ where
     Γ ⊢ M ÷ T
 -}
 
+-- semantics of types for correctness and incorrectness
+
 record _←_ (A B : Set) : Set where
   field
     func : A → B
@@ -355,20 +375,21 @@ record _←_ (A B : Set) : Set where
 open _←_
 
 T⟦_⟧ : Type → Set
-T⟦ Base P ⟧ = Σ ℕ P
+T⟦ Base P ∃P ⟧ = Σ ℕ P
 T⟦ Nat ⟧ = ℕ
 T⟦ S ⇒ T ⟧ = T⟦ S ⟧ → T⟦ T ⟧
 T⟦ S ⋆ T ⟧ = T⟦ S ⟧ × T⟦ T ⟧
 T⟦ S ⊹ T ⟧ = T⟦ S ⟧ ⊎ T⟦ T ⟧
 
 T'⟦_⟧ : Type → Set
-T'⟦ Base P ⟧ = Σ ℕ P
+T'⟦ Base P ∃P ⟧ = Σ ℕ P
 T'⟦ Nat ⟧ = ℕ
 T'⟦ S ⇒ T ⟧ = T'⟦ S ⟧ ← T'⟦ T ⟧
 T'⟦ S ⋆ T ⟧ = T'⟦ S ⟧ × T'⟦ T ⟧
 T'⟦ S ⊹ T ⟧ = T'⟦ S ⟧ ⊎ T'⟦ T ⟧
 
-  
+-- semantics of type environments
+
 E⟦_⟧ : Env Type → Env Set
 E⟦ · ⟧ = ·
 E⟦ Γ , x ⦂ T ⟧ = E⟦ Γ ⟧ , x ⦂ T⟦ T ⟧
@@ -380,6 +401,8 @@ data iEnv : Env Set → Set where
 lookup : (x ⦂ T ∈ Γ) → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
 lookup found (γ , _ ⦂ a) = a
 lookup (there x∈) (γ , _ ⦂ a) = lookup x∈ γ
+
+-- denotational semantics of expressions
 
 eval : Γ ⊢ M ⦂ T → iEnv E⟦ Γ ⟧ → T⟦ T ⟧
 eval (nat'{n = n}) γ = n , refl
@@ -394,6 +417,9 @@ eval (sum-I2 ⊢N) γ = inj₂ (eval ⊢N γ)
 eval (sum-E{S = S}{T = T}{U = U} ⊢L ⊢M ⊢N) γ =
   [ (λ s → eval ⊢M (γ , _ ⦂ s)) , (λ t → eval ⊢N (γ , _ ⦂ t)) ] (eval ⊢L γ)
 
+-- seems like we need a lemma like this one to complete the correspondence theorem below
+
+-- Γ ⊢ M ÷ S → S <: T → ∃[ Γ′ ] (Γ <: Γ′ × Γ′ ⊢ M ÷ T)
 
 corr : Γ ⊢ M ÷ T → Γ ⊢ M ⦂ T
 corr (nat') = nat'
@@ -405,19 +431,19 @@ corr (pair-E2 ÷M) = pair-E2 (corr ÷M)
 corr (pair sp ÷M ÷N) = pair (weaken sp (corr ÷M)) (weaken (split-sym sp) (corr ÷N))
 corr (sum-E sp ÷L ÷M ÷N) = sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr ÷M)) (weaken (lft (split-sym sp)) (corr ÷N))
 corr (sum-E′ sp ÷L ÷M ÷N U≡U′⊔U″) =
-  sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr {!!})) (weaken (lft (split-sym sp)) (corr {!!}))
+  sum-E (weaken sp (corr  ÷L)) (weaken (lft (split-sym sp)) (corr {!÷M!})) (weaken (lft (split-sym sp)) (corr {!÷N!}))
 {-
 corr (`sub` ÷M T<S) = {!÷M!}
 -}
 
 -- pick one element of a type to demonstrate non-emptiness
-one : ∀ (T : Type) {net : ne T} → T⟦ T ⟧
-one (Base P) {ne-base ∃P} = ∃P
+one : ∀ (T : Type) → T⟦ T ⟧
+one (Base P ∃P) = ∃P
 one Nat = zero
-one (T ⇒ T₁) {ne-⇒ ne-T ne-T₁} = λ x → one T₁ {ne-T₁}
-one (T ⋆ T₁) {ne-⋆ ne-T ne-T₁} = (one T {ne-T}) , (one T₁ {ne-T₁})
-one (T ⊹ T₁) {ne-⊹L ne-T} = inj₁ (one T {ne-T})
-one (T ⊹ T₁) {ne-⊹R ne-T₁} = inj₂ (one T₁ {ne-T₁})
+one (T ⇒ T₁) = λ x → one T₁
+one (T ⋆ T₁) = one T , one T₁
+one (T ⊹ T₁) = inj₁ (one T)
+-- one (T ⊹ T₁) = inj₂ (one T₁)
 
 {- not needed
 many : iEnv E⟦ Γ ⟧
@@ -482,6 +508,7 @@ eval-unsplit sp γ₁ γ₂ (sum-E ⊢L ⊢M ⊢N)
   = refl
 
 -- soundness of the incorrectness rules
+
 lave :
   (÷M : Γ ⊢ M ÷ T) →
   ∀ (t : T⟦ T ⟧) →
@@ -498,9 +525,9 @@ lave (lam{x = x}{S = S} ÷M) t = · , ext aux
     aux s with lave ÷M (t s)
     ... | (· , .x ⦂ a) , snd = {!!} -- impossible to complete!
 
-lave (pair-E1 ÷M) t with lave ÷M (t , one {!!})
+lave (pair-E1{S = T₁}{T = T₂} ÷M) t with lave ÷M (t , one T₂)
 ... | γ , ih = γ , Eq.cong proj₁ ih
-lave (pair-E2 ÷M) t with lave ÷M (one {!!} , t)
+lave (pair-E2{S = T₁}{T = T₂} ÷M) t with lave ÷M (one T₁ , t)
 ... | γ , ih = γ , Eq.cong proj₂ ih
 
 lave (pair sp ÷M ÷N) (s , t) with lave ÷M s | lave ÷N t
